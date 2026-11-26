@@ -62,7 +62,10 @@ class Geocoder:
         self._clock = clock
         self._last: float | None = None
         self._http = httpx.Client(
-            headers={"User-Agent": user_agent}, timeout=30, transport=transport
+            headers={"User-Agent": user_agent},
+            timeout=30,
+            transport=transport,
+            follow_redirects=True,
         )
         self.requests_made = 0
 

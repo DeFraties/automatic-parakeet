@@ -259,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # httpx logs full request URLs at INFO; geocoder URLs contain street addresses.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if "properties" not in inspect(engine).get_table_names():
         print("Database not migrated. Run `make migrate` first.", file=sys.stderr)
         return 2

@@ -10,13 +10,14 @@ spec was ambiguous are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ## Status
 
-**Phase 1 — playable skeleton** ✅ Classic mode, Normal (USD) and Hard (local currency), on demo
-data. No scraping, no Google key needed.
+**Phase 2 — real data pipeline** ✅ Polite ingestion framework, FX, GHSL urban/suburban/rural
+classifier, and the HM Land Registry importer. Real records aren't playable until the Street
+View check lands in Phase 3; the game still plays on the demo seed.
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Skeleton, seed data, scoring, selection, Classic, Normal + Hard | done |
-| 2 | Ingest framework, FX, GHSL classifier, UK Price Paid | – |
+| 2 | Ingest framework, FX, GHSL classifier, UK Price Paid | done |
 | 3 | Street View, Daily, leaderboards, Urban/Suburban modes, About + removal | – |
 | 4 | Regional, Higher/Lower, polish, backups, cron, deployment guide | – |
 
@@ -50,14 +51,37 @@ try region presets in development.
 | `make build` | Production frontend build into `frontend/dist` |
 | `make up` / `down` / `logs` | docker compose stack (API + Caddy + static frontend) |
 
+## Data ingestion
+
+All commands run from the repo root (`make ingest ARGS="…"` is the same as
+`backend/.venv/bin/python -m ingest …`).
+
+```bash
+# One-time setup
+#   1. In .env, set SCRAPER_USER_AGENT to something that identifies you (Nominatim's policy).
+#   2. Download the GHSL settlement raster (~18 MB) used for urban/suburban/rural:
+make ingest ARGS="setting-data download"
+#   3. Monthly TWD rates (not published by the ECB) go in data/fx_manual.csv.
+
+make ingest ARGS="fx-update"                       # refresh FX rates
+make ingest ARGS="run --source uk_price_paid"      # ~2,000 records, ~35 min on public Nominatim
+make ingest ARGS="run --all"                       # every enabled source in sources.yaml
+make ingest ARGS="stats"                           # counts by source / country / sv_status
+make ingest ARGS="stats --by country,setting"
+make ingest ARGS="reclassify-settings"             # after a new GHSL file or rule change
+```
+
+Sources are configured in `backend/ingest/sources.yaml`. **Before adding a new source, read
+[`docs/SOURCES.md`](docs/SOURCES.md)**: it has the compliance checklist and a plugin guide.
+
 ## Layout
 
 ```
-backend/   FastAPI app (app/), Alembic migrations, pytest suite
+backend/   FastAPI app (app/), ingestion (ingest/), Alembic migrations, pytest suite
 frontend/  Vite + React + TypeScript game client, Vitest + Playwright tests
 deploy/    docker-compose.yml, Caddyfile
 docs/      GDD, decisions log
-data/      SQLite DB and (later) GHSL raster / manual FX CSV — not committed
+data/      SQLite DB, GHSL raster, caches (not committed); fx_manual.csv
 ```
 
 Key backend modules:
@@ -82,6 +106,9 @@ A full VPS / home-server guide, backups and the cron container come in Phase 4.
 
 ## Data & compliance
 
-Phase 1 ships only invented **DEMO** data. Real sources arrive in Phase 2 under the hard
-compliance rules in GDD §12: facts only, no stored photos or Google content (except `pano_id`),
-polite robots.txt-respecting scraping that stops when blocked, link-back and a removal path.
+Sources so far: invented **DEMO** data and HM Land Registry Price Paid Data (Contains HM Land
+Registry data © Crown copyright and database right. Licensed under the Open Government Licence
+v3.0). Urban/suburban/rural comes from GHSL GHS-SMOD (European Commission JRC, CC BY 4.0).
+Everything follows the hard compliance rules in GDD §12: facts only, no stored photos or Google
+content (except `pano_id`), polite robots.txt-respecting fetching that stops when blocked,
+link-back and a removal path.

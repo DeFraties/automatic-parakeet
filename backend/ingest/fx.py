@@ -83,7 +83,10 @@ class FxService:
         self.fallback = fallback
         self.fallback_set = set(fallback_currencies())
         self._http = httpx.Client(
-            headers={"User-Agent": user_agent}, timeout=30, transport=transport
+            headers={"User-Agent": user_agent},
+            timeout=30,
+            transport=transport,
+            follow_redirects=True,
         )
         self._fetched_years: set[int] = set()
 

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     fx_manual_csv: str = "./data/fx_manual.csv"
 
     # Ingestion (Phase 2)
-    fx_api_url: str = "https://api.frankfurter.app"
+    fx_api_url: str = "https://api.frankfurter.dev/v1"
     postcodes_io_url: str = "https://api.postcodes.io"
     ingest_cache_dir: str = "./data/cache"
     ghsl_smod_url: str = (
