@@ -1,0 +1,15 @@
+.env
+data/*.db
+data/*.db-*
+data/ghsl/
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+*.tsbuildinfo
+.DS_Store
