@@ -177,7 +177,14 @@ def test_region_scope(client, seeded):
     g = _new(client, where_scope="region", where_value="europe")
     for n in range(1, 6):
         assert _prop_for(seeded, g["game_id"], n).country_code in {
-            "PT", "ES", "GB", "FR", "IT", "PL", "HR"}  # fmt: skip
+            "PT",
+            "ES",
+            "GB",
+            "FR",
+            "IT",
+            "PL",
+            "HR",
+        }
 
 
 @pytest.mark.parametrize(
@@ -217,5 +224,11 @@ def test_meta(client, seeded):
     jp = next(c for c in m["countries"] if c["code"] == "JP")
     assert jp["eligible"] == {"urban": 2, "suburban": 1, "total": 3}
     assert {r["key"] for r in m["regions"]} == {
-        "north_america", "south_america", "europe", "africa", "oceania", "east_asia"}  # fmt: skip
+        "north_america",
+        "south_america",
+        "europe",
+        "africa",
+        "oceania",
+        "east_asia",
+    }
     assert [s["key"] for s in m["sources"]] == ["demo"]

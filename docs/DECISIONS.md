@@ -57,3 +57,54 @@ Choices made where the GDD was ambiguous (GDD §0 rule 8). Newest at the bottom 
     Plain numbers treat every `.`/`,` as a grouping separator (prices are whole numbers).
 18. **`make test`** runs backend (pytest) and frontend (tsc + Vitest) tests. The Playwright smoke
     test is `make e2e` (it starts its own API + Vite servers on spare ports with a throwaway DB).
+
+## Phase 2
+
+19. **robots.txt status codes follow RFC 9309**: any 4xx (including 401/403) means "no rules,
+    everything allowed"; 5xx or unreachable means "disallow everything" until it can be read.
+    (Many static hosts, including S3 website endpoints, return 403 for a missing robots.txt.)
+    A longer `Crawl-delay` in robots.txt overrides the source's `delay_seconds`.
+20. **PoliteClient is synchronous with one lock per domain**, so "max 1 concurrent request per
+    domain" holds even if a plugin uses threads. Its on-disk cache is a small SQLite file
+    (`data/cache/http_cache.sqlite`) rather than `hishel`, to keep dependencies minimal. Only
+    HTTP 200 responses are cached. Cookies are refused by a cookie policy, so nothing is ever
+    stored or sent.
+21. **Bulk downloads** (Land Registry CSVs, the GHSL zip) go through `PoliteClient.download()`:
+    robots.txt is checked, they're streamed to disk, and a file younger than 7 days is reused.
+22. **APIs** (Frankfurter, Nominatim, postcodes.io) are called with plain `httpx` and the same
+    honest User-Agent, not through PoliteClient. They're APIs with their own usage policies, not
+    crawled pages. A 403/429 from a geocoder still stops the run (`SourceBlocked`).
+23. **Geocoding precision from Nominatim `place_rank`**: ≥ 28 = `exact` (building / house
+    number), 26–27 = `street`, coarser = no match → postcode centroid from postcodes.io
+    (`district`, not playable). The geocode cache stores SHA-256 hashes of queries plus
+    coordinates only, so addresses never touch disk. Public Nominatim is throttled to just under
+    1 request/second. A self-hosted `NOMINATIM_URL` isn't throttled.
+24. **UK Price Paid**: uses the monthly update file by default (configurable `urls:`; or
+    `local_path`). Keeps `ppd_category = A` and `record_status` A or C, property types D/S/T/F.
+    D and S map to `house`, T to `townhouse`, F to `apartment`. City is the CSV's town (title-cased);
+    region is the county. `listing_url` links to the record on landregistry.data.gov.uk (only
+    shown on reveal). Sampling is round-robin across counties. The plugin's geocoder lookups count
+    toward the run, so a 2,000-record run takes ~35 min on public Nominatim.
+25. **FX**: rates are fetched a calendar year at a time on demand (one request per year, all
+    launch currencies), then looked up for `price_date` or up to 10 days earlier. `fx-update`
+    fetches the last 30 days and mirrors `data/fx_manual.csv` (TWD) into `fx_rates` as
+    first-of-month rows, so Hard mode's latest-rate lookup works for TWD too. Which currencies
+    are ECB-covered is a field on each country in `countries.py` (`in_ecb_fx`).
+    `data/fx_manual.csv` ships with only a header row. The owner fills in TWD monthly averages
+    from an official source. Until then, TWD records are skipped and logged.
+26. **HRK**: any price a plugin returns in HRK is converted to EUR at 7.53450 and stored as EUR,
+    whatever its date (the pipeline does this, not each plugin).
+27. **Cross-source duplicates** are flagged, not merged: counted on the run row, logged, and up to
+    50 id pairs stored in `ingest_runs.details`. Both records stay active for now.
+28. **Moving a record resets its Street View status**: if an update changes its coordinates,
+    `sv_status` goes back to `unchecked` and `pano_id` is cleared.
+29. **`ingest_runs`** (GDD §10.3) was added in migration 0002 with counts, status
+    (`ok`/`blocked`/`error`), rejection reasons and a message.
+30. **CLI scope**: Phase 2 ships `run`, `fx-update`, `stats`, `reclassify-settings` and
+    `setting-data download`. `streetview-check`, `deactivate`, `removals` and `remove` arrive with
+    Phase 3 (Street View + removal path), as the phase plan lists them there.
+31. **`stats --by`** accepts any comma-separated mix of `country, source, sv_status, setting,
+    precision, type, price_type` (the Phase 5 `--by country,setting` example works already).
+32. **rasterio + pyproj are regular dependencies** (wheels bundle GDAL). The classifier opens the
+    raster once per run and uses `DatasetReader.sample`, which handles over 5,000 points/s in
+    tests.

@@ -1,4 +1,5 @@
 from collections import Counter
+from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
@@ -29,7 +30,7 @@ def test_seed_is_idempotent(db):
 
 def test_migrations_match_models(tmp_path):
     url = f"sqlite:///{tmp_path / 'm.db'}"
-    cfg = Config("alembic.ini")
+    cfg = Config(str(Path(__file__).parents[1] / "alembic.ini"))
     cfg.attributes["database_url"] = url
     command.upgrade(cfg, "head")
     insp = inspect(create_engine(url))

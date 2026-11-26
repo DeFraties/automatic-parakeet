@@ -6,7 +6,7 @@ ALEMBIC := $(VENV)/bin/alembic -c backend/alembic.ini
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 
 .PHONY: help install dev api web test test-backend test-frontend e2e lint format build \
-        migrate seed up down logs clean
+        migrate seed ingest up down logs clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -64,6 +64,9 @@ migrate: $(VENV)/.installed .env ## Apply DB migrations
 
 seed: migrate ## Load 51 DEMO properties
 	$(PY) -m app.seed
+
+ingest: migrate ## Run the ingest CLI: make ingest ARGS="run --source uk_price_paid"
+	$(PY) -m ingest $(ARGS)
 
 up: .env ## Start the docker compose stack
 	$(COMPOSE) up -d --build

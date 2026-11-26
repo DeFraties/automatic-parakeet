@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     ghsl_smod_path: str = "./data/ghsl/GHS_SMOD.tif"
     fx_manual_csv: str = "./data/fx_manual.csv"
 
+    # Ingestion (Phase 2)
+    fx_api_url: str = "https://api.frankfurter.app"
+    postcodes_io_url: str = "https://api.postcodes.io"
+    ingest_cache_dir: str = "./data/cache"
+    ghsl_smod_url: str = (
+        "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_SMOD_GLOBE_R2023A/"
+        "GHS_SMOD_E2025_GLOBE_R2023A_54009_1000/V2-0/GHS_SMOD_E2025_GLOBE_R2023A_54009_1000_V2_0.zip"
+    )
+
     # Rate limits (Section 6.1). Set to 0 to disable.
     rate_limit_games_per_hour: int = 30
     rate_limit_guesses_per_hour: int = 120

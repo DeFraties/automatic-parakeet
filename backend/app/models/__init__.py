@@ -198,3 +198,23 @@ class SvUsage(Base):
     date: Mapped[date] = mapped_column(Date, primary_key=True)
     urls_issued: Mapped[int] = mapped_column(Integer, default=0)
     daily_reserved_used: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class IngestRun(Base):
+    __tablename__ = "ingest_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_key: Mapped[str] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # ok|blocked|error|running
+    discovered: Mapped[int] = mapped_column(Integer, default=0)
+    fetched: Mapped[int] = mapped_column(Integer, default=0)
+    inserted: Mapped[int] = mapped_column(Integer, default=0)
+    updated: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    rejected: Mapped[int] = mapped_column(Integer, default=0)
+    dropped_country: Mapped[int] = mapped_column(Integer, default=0)
+    possible_duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    details: Mapped[dict | None] = mapped_column(JSON)  # e.g. rejection reasons -> counts
+    message: Mapped[str | None] = mapped_column(Text)

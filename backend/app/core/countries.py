@@ -22,6 +22,7 @@ class Country:
     currency_name: str
     region: str  # Region.key
     locale: str  # default BCP-47 locale
+    in_ecb_fx: bool = True  # currency covered by ECB reference rates (Frankfurter)?
 
 
 REGIONS: tuple[Region, ...] = (
@@ -49,7 +50,7 @@ COUNTRIES: tuple[Country, ...] = (
     Country("AU", "Australia", "🇦🇺", "AUD", "Australian dollar", "oceania", "en-AU"),
     Country("NZ", "New Zealand", "🇳🇿", "NZD", "New Zealand dollar", "oceania", "en-NZ"),
     Country("JP", "Japan", "🇯🇵", "JPY", "Japanese yen", "east_asia", "ja-JP"),
-    Country("TW", "Taiwan", "🇹🇼", "TWD", "New Taiwan dollar", "east_asia", "zh-TW"),
+    Country("TW", "Taiwan", "🇹🇼", "TWD", "New Taiwan dollar", "east_asia", "zh-TW", False),
 )
 
 COUNTRIES_BY_CODE: dict[str, Country] = {c.code: c for c in COUNTRIES}
@@ -67,3 +68,13 @@ def is_launch_country(code: str | None) -> bool:
 
 def countries_in_region(region_key: str) -> list[Country]:
     return [c for c in COUNTRIES if c.region == region_key]
+
+
+def ecb_currencies() -> list[str]:
+    """Launch currencies (excluding USD) available from ECB / Frankfurter."""
+    return sorted({c.currency for c in COUNTRIES if c.in_ecb_fx and c.currency != "USD"})
+
+
+def fallback_currencies() -> list[str]:
+    """Launch currencies that need the FallbackFxProvider (not covered by the ECB)."""
+    return sorted({c.currency for c in COUNTRIES if not c.in_ecb_fx})

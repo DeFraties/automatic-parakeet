@@ -1,0 +1,20 @@
+# Enabled sources and per-source settings. Keys not listed below are passed to the plugin as
+# `settings`. Before enabling ANY source, it must pass the checklist in docs/SOURCES.md.
+
+uk_price_paid:
+  enabled: true
+  max_records_per_run: 2000
+  delay_seconds: 5
+  # Monthly update file (≈100k rows, latest changes). Add yearly files (pp-2024.csv, …) for more.
+  # Set `local_path` instead to use a CSV you downloaded yourself.
+  urls:
+    - http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-monthly-update-new-version.csv
+  filters: { min_year: 2022, property_types: [D, S, T, F] }
+
+example_html:
+  enabled: false
+  delay_seconds: 5
+  max_records_per_run: 50
+  # Serve backend/tests/fixtures/example_site locally to try it:
+  #   python -m http.server 8099 -d backend/tests/fixtures/example_site
+  base_url: http://127.0.0.1:8099/

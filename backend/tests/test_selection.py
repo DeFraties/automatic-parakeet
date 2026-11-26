@@ -106,12 +106,24 @@ def test_urban_only_filter_returns_only_requested(db):
 
 def _prop(src, ref, **kw):
     base = dict(
-        source_id=src.id, source_ref=ref, price_type="sale_record", price_local=300_000,
-        currency="EUR", price_usd=324_000, fx_rate_to_usd=1.08,
+        source_id=src.id,
+        source_ref=ref,
+        price_type="sale_record",
+        price_local=300_000,
+        currency="EUR",
+        price_usd=324_000,
+        fx_rate_to_usd=1.08,
         price_date=TODAY - timedelta(days=30),
-        country_code="FR", city="Lyon", lat=45.76, lng=4.83, location_precision="exact",
-        setting="urban", property_type="house", sv_status="ok", is_active=True,
-    )  # fmt: skip
+        country_code="FR",
+        city="Lyon",
+        lat=45.76,
+        lng=4.83,
+        location_precision="exact",
+        setting="urban",
+        property_type="house",
+        sv_status="ok",
+        is_active=True,
+    )
     base.update(kw)
     return Property(**base)
 

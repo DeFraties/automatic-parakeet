@@ -2,8 +2,24 @@ import re
 
 from app.core.countries import COUNTRIES, REGIONS, REGIONS_BY_KEY, countries_in_region
 
-EXPECTED = {"US", "CA", "MX", "BR", "PT", "ES", "GB", "FR", "IT", "PL", "HR", "ZA", "AU", "NZ",
-            "JP", "TW"}  # fmt: skip
+EXPECTED = {
+    "US",
+    "CA",
+    "MX",
+    "BR",
+    "PT",
+    "ES",
+    "GB",
+    "FR",
+    "IT",
+    "PL",
+    "HR",
+    "ZA",
+    "AU",
+    "NZ",
+    "JP",
+    "TW",
+}
 
 
 def _flag_for(code: str) -> str:
