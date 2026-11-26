@@ -131,3 +131,12 @@ def test_geocoder_block_stops(tmp_path):
     g, _, _ = make(tmp_path, lambda r: httpx.Response(429))
     with pytest.raises(SourceBlocked):
         g.nominatim(street="1 Road", city="Leeds", postalcode=None, country_code="GB")
+
+
+def test_errors_never_include_the_address(tmp_path):
+    from ingest.geocode import GeocodeError
+
+    g, _, _ = make(tmp_path, lambda r: httpx.Response(629))
+    with pytest.raises(GeocodeError) as e:
+        g.nominatim(street="12 Private Lane", city="Leeds", postalcode="ZZ1 1AA", country_code="GB")
+    assert "Private" not in str(e.value) and "ZZ1" not in str(e.value)

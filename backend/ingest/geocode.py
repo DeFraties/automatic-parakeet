@@ -22,6 +22,10 @@ log = logging.getLogger(__name__)
 PUBLIC_NOMINATIM_HOST = "nominatim.openstreetmap.org"
 
 
+class GeocodeError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class GeoResult:
     lat: float
@@ -86,7 +90,9 @@ class Geocoder:
             raise SourceBlocked(f"geocoder refused the request (HTTP {resp.status_code})")
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
+        if not 200 <= resp.status_code < 300:
+            # Deliberately no URL in the message: geocoder URLs contain street addresses.
+            raise GeocodeError(f"geocoder returned HTTP {resp.status_code}")
         return resp.json()
 
     def nominatim(
