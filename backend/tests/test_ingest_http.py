@@ -194,3 +194,10 @@ def test_challenge_detection_is_specific():
 def test_requires_user_agent(tmp_path):
     with pytest.raises(ValueError):
         PoliteClient("", tmp_path)
+
+
+def test_robots_403_is_not_logged_as_blocked(server, tmp_path, ft, caplog):
+    server.routes["/robots.txt"] = (403, "AccessDenied", {})
+    server.routes["/file.csv"] = (200, "a,b", {})
+    assert make(tmp_path, ft).get(f"{server.url}/file.csv").text == "a,b"
+    assert "BLOCKED" not in caplog.text

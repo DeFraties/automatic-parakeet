@@ -176,7 +176,8 @@ class PoliteClient:
                     continue
                 status = resp.status_code
                 if status in (403, 429) or looks_like_challenge(body):
-                    log.error("BLOCKED %s (HTTP %s)", url, status)
+                    if urlsplit(url).path != "/robots.txt":  # robots 4xx = "no rules" (RFC 9309)
+                        log.error("BLOCKED %s (HTTP %s)", url, status)
                     raise SourceBlocked(f"{domain} refused the request (HTTP {status})")
                 if 500 <= status < 600 and attempt < MAX_RETRIES:
                     attempt += 1
