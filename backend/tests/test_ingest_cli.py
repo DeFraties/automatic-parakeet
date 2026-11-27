@@ -67,3 +67,14 @@ def test_unknown_source_and_bad_stats_field(cli_env, capsys):
 def test_reclassify_without_raster(cli_env, capsys):
     assert main(["reclassify-settings"]) == 1
     assert "not available" in capsys.readouterr().err
+
+
+def test_stats_by_mapillary_and_active(cli_env, capsys):
+    from app.seed import seed
+
+    with SessionLocal() as db:
+        seed(db)
+    assert main(["stats", "--by", "source,mapillary,active"]) == 0
+    out = capsys.readouterr().out
+    row = next(line for line in out.splitlines() if line.startswith("demo"))
+    assert row.split() == ["demo", "unchecked", "True", "51"]

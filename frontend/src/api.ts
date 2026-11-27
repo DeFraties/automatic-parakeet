@@ -42,6 +42,7 @@ export interface Meta {
   tile_url: string;
   tile_attribution: string;
   streetview_enabled: boolean;
+  photo_sources: { mapillary: boolean; google: boolean };
   quota: { games_available: boolean; daily_available: boolean };
 }
 

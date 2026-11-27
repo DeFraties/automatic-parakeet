@@ -170,6 +170,13 @@ export function Home({
         <a href="#/about">How it works &amp; data</a>
       </nav>
 
+      {meta && !meta.photo_sources.mapillary && !meta.photo_sources.google && (
+        <p className="banner" role="status">
+          📷 No photo source is set up, so homes show illustrations. To show street photos, add{' '}
+          <code>MAPILLARY_TOKEN=…</code> to <code>.env</code> and restart with <code>make dev</code>.
+        </p>
+      )}
+
       {meta && !worldOk && (
         <p className="banner">
           Not enough playable homes for these settings yet. Try turning on more neighbourhood types,

@@ -42,6 +42,8 @@ STATS_COLUMNS = {
     "country": Property.country_code,
     "source": Source.key,
     "sv_status": Property.sv_status,
+    "mapillary": Property.mly_status,
+    "active": Property.is_active,
     "setting": Property.setting,
     "precision": Property.location_precision,
     "type": Property.property_type,

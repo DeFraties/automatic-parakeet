@@ -119,3 +119,102 @@ def test_round_payload_reports_listing_photo(client, seeded):
     seeded.commit()
     r = client.post("/api/games", json={}, headers=H()).json()["round"]
     assert r["image_source"] == "listing" and r["image_url"].startswith("https://photos.example/")
+
+
+def _graph(images_response):
+    """Mock Graph API: /images returns `images_response`; /{id} returns a thumbnail."""
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if request.url.path == "/images":
+            return images_response(request)
+        return httpx.Response(
+            200, json={"thumb_1024_url": f"https://cdn.mly.test{request.url.path}.jpg"}
+        )
+
+    return mapillary.ThumbResolver(transport=httpx.MockTransport(handler)), calls
+
+
+def _facing_image(p):
+    # 20 m south of the house, camera pointing north (at it)
+    return {
+        "id": "777",
+        "is_pano": False,
+        "computed_compass_angle": 0,
+        "computed_geometry": {"type": "Point", "coordinates": [p.lng, p.lat - 20 / 111_320]},
+    }
+
+
+def test_unchecked_home_is_checked_on_the_fly(seeded, monkeypatch, caplog):
+    monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|t")
+    p = prop(seeded, mly_status="unchecked", mly_image_id=None, location_precision="exact")
+    resolver, calls = _graph(lambda r: httpx.Response(200, json={"data": [_facing_image(p)]}))
+    monkeypatch.setattr(mapillary, "resolver", resolver)
+    img = images.round_image(seeded, p, daily=False)
+    assert img.source == "mapillary" and img.url == "https://cdn.mly.test/777.jpg"
+    seeded.expire_all()
+    p = seeded.get(Property, p.id)
+    assert (p.mly_status, p.mly_image_id) == ("ok", "777")  # saved for next time
+    images.round_image(seeded, p, daily=False)
+    assert sum(c.url.path == "/images" for c in calls) == 1  # no second search
+
+
+def test_on_the_fly_no_photo_nearby_is_remembered(seeded, monkeypatch):
+    monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|t")
+    p = prop(seeded, mly_status="unchecked", location_precision="street")
+    resolver, _ = _graph(lambda r: httpx.Response(200, json={"data": []}))
+    monkeypatch.setattr(mapillary, "resolver", resolver)
+    assert images.round_image(seeded, p, daily=False) == images.NO_IMAGE
+    seeded.expire_all()
+    assert seeded.get(Property, p.id).mly_status == "none"
+
+
+def test_on_the_fly_api_error_leaves_unchecked_and_logs(seeded, monkeypatch, caplog):
+    monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|bad")
+    p = prop(seeded, mly_status="unchecked", location_precision="exact")
+    resolver, _ = _graph(lambda r: httpx.Response(401, json={"error": "invalid token"}))
+    monkeypatch.setattr(mapillary, "resolver", resolver)
+    assert images.round_image(seeded, p, daily=False) == images.NO_IMAGE
+    seeded.expire_all()
+    assert seeded.get(Property, p.id).mly_status == "unchecked"
+    assert "HTTP 401" in caplog.text and "MLY|bad" not in caplog.text
+
+
+def test_district_homes_not_looked_up(seeded, monkeypatch):
+    monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|t")
+    p = prop(seeded, mly_status="unchecked", location_precision="district")
+    resolver, calls = _graph(lambda r: httpx.Response(200, json={"data": []}))
+    monkeypatch.setattr(mapillary, "resolver", resolver)
+    images.round_image(seeded, p, daily=False)
+    assert calls == []
+
+
+def test_game_rounds_get_mapillary_photos_without_running_the_check(client, seeded, monkeypatch):
+    monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|t")
+
+    def images_near(request):
+        w, s, e, n = map(float, request.url.params["bbox"].split(","))
+        lat, lng = (s + n) / 2, (w + e) / 2
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "42",
+                        "is_pano": False,
+                        "computed_compass_angle": 0,
+                        "computed_geometry": {
+                            "type": "Point",
+                            "coordinates": [lng, lat - 20 / 111_320],
+                        },
+                    }
+                ]
+            },
+        )
+
+    resolver, _ = _graph(images_near)
+    monkeypatch.setattr(mapillary, "resolver", resolver)
+    g = client.post("/api/games", json={}, headers=H()).json()
+    assert g["round"]["image_source"] == "mapillary"
+    assert g["round"]["attribution"].startswith("© Mapillary")

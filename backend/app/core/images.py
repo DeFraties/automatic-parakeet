@@ -4,6 +4,7 @@ Order: the source's own listing photo (hotlinked, credited) -> Google Street Vie
 key is configured) -> Mapillary -> none (the client shows an illustrated card).
 """
 
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -15,6 +16,9 @@ from app.core.streetview_urls import image_for
 from app.models import Property
 
 IMAGE_SOURCES = ("listing", "google", "mapillary")
+PRECISE = ("exact", "street")
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,15 @@ def round_image(db: Session, p: Property, *, daily: bool) -> RoundImage:
         if url:
             quota.record_url(db, daily=daily)
             return RoundImage(url, "google", GOOGLE_ATTRIBUTION)
+    if s.mapillary_token and p.mly_status == "unchecked" and p.location_precision in PRECISE:
+        # Not checked yet (e.g. `ingest mapillary-check` never ran): look it up now and save
+        # the result, so photos appear as soon as a token is configured.
+        try:
+            image_id = mapillary.resolver.find(p.lat, p.lng, s.mapillary_token)
+            p.mly_image_id, p.mly_status = image_id, ("ok" if image_id else "none")
+            db.commit()
+        except mapillary.MapillaryError as e:
+            log.warning("Mapillary check for property %s failed: %s", p.id, e)
     if p.mly_status == "ok" and p.mly_image_id and s.mapillary_token:
         url = mapillary.resolver.thumb_url(p.mly_image_id, s.mapillary_token)
         if url:

@@ -230,3 +230,24 @@ describe('PropertyImage', () => {
     expect(container.querySelector('.scene-rural')).not.toBeNull();
   });
 });
+
+describe('photo source hint', () => {
+  it('tells the owner how to enable photos when none is configured', async () => {
+    stubFetch((url) => {
+      if (url === '/api/meta') return { ...makeMeta(), photo_sources: { mapillary: false, google: false } };
+      if (url === '/api/daily') return notPlayed;
+    });
+    render(<App />);
+    expect(await screen.findByText(/No photo source is set up/)).toBeInTheDocument();
+  });
+
+  it('stays quiet when Mapillary is configured', async () => {
+    stubFetch((url) => {
+      if (url === '/api/meta') return makeMeta();
+      if (url === '/api/daily') return notPlayed;
+    });
+    render(<App />);
+    await screen.findByRole('button', { name: /Daily Challenge/ });
+    expect(screen.queryByText(/No photo source is set up/)).not.toBeInTheDocument();
+  });
+});

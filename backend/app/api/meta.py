@@ -81,6 +81,7 @@ def meta(db: Session = Depends(get_db)) -> dict:
         "tile_url": s.tile_url,
         "tile_attribution": s.tile_attribution,
         "streetview_enabled": quota.google_enabled(),
+        "photo_sources": {"mapillary": bool(s.mapillary_token), "google": quota.google_enabled()},
         "min_pool_per_option": mp,
         "rounds_per_game": ROUNDS_PER_GAME,
         "public_base_url": s.public_base_url,

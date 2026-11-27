@@ -234,6 +234,7 @@ def test_meta(client, seeded):
     assert m["settings"] == {"all": ["urban", "suburban", "rural"], "default": ["urban", "rural"]}
     assert m["tile_url"].startswith("https://tile.openstreetmap.org/")
     assert m["streetview_enabled"] is False
+    assert m["photo_sources"] == {"mapillary": False, "google": False}
     assert m["quota"] == {"games_available": True, "daily_available": True}
     assert {r["key"] for r in m["regions"]} == {
         "north_america",
