@@ -35,3 +35,37 @@ for (const difficulty of ['Normal', 'Hard'] as const) {
     if (difficulty === 'Hard') expect(copied).toContain('🔥 HARD');
   });
 }
+
+test('Daily: play once, submit to leaderboard, Home shows done', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Daily Challenge/ }).click();
+  for (let n = 1; n <= 5; n++) {
+    await expect(page.getByText(`Round ${n}/5`)).toBeVisible();
+    await expect(page.getByText(/^Daily #\d+ · Normal$/)).toBeVisible();
+    await page.getByLabel('Your guess').pressSequentially('350k');
+    await page.getByLabel('Your guess').press('Enter');
+    await expect(page.getByLabel(/points$/)).toBeVisible();
+    await page.getByRole('button', { name: n < 5 ? 'Next round' : 'See results' }).click();
+  }
+  await expect(page.locator('.summary-total')).toContainText('/ 25,000');
+  const nick = `E2E${test.info().project.name.slice(0, 3)}`;
+  await page.getByLabel('Submit to leaderboard').fill(nick);
+  await page.getByRole('button', { name: 'Submit' }).click();
+  await expect(page.getByText(/on this board/)).toBeVisible();
+
+  await page.goto('/#/leaderboards');
+  await expect(page.getByRole('row', { name: new RegExp(nick) })).toBeVisible();
+
+  await page.goto('/');
+  await expect(page.getByText(/✓ Done today/)).toBeVisible();
+});
+
+test('About page and removal form', async ({ page }) => {
+  await page.goto('/#/about');
+  await expect(page.getByRole('heading', { name: 'How it works' })).toBeVisible();
+  await expect(page.getByText(/GHS-SMOD/).first()).toBeVisible();
+  await page.getByLabel('Your email').fill('owner@example.com');
+  await page.getByLabel('Listing link or property ID').fill('https://example.com/demo/demo-001');
+  await page.getByRole('button', { name: 'Send removal request' }).click();
+  await expect(page.getByText(/within 72 hours/)).toBeVisible();
+});

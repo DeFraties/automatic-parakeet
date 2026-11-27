@@ -6,25 +6,24 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import quota
 from app.core.config import ROUNDS_PER_GAME, get_settings
 from app.core.countries import COUNTRIES, REGIONS, countries_in_region
+from app.core.daily import daily_number
 from app.core.db import get_db
-from app.core.selection import eligible_counts
+from app.core.selection import ALL_SETTINGS, DEFAULT_SETTINGS, eligible_counts
 from app.models import Source
 
 router = APIRouter()
 
 
-def daily_number(today: date, launch: date) -> int:
-    """Day count since launch (launch day = #1)."""
-    return (today - launch).days + 1
-
-
-def _counts(urban: int, suburban: int, min_pool: int) -> dict:
-    total = urban + suburban
+def _counts(by_setting: dict[str, int], min_pool: int) -> dict:
+    """Per-setting eligible counts. `selectable` is for the default setting mix; the client
+    recomputes it for whatever toggles the player has chosen."""
+    default_total = sum(by_setting.get(x, 0) for x in DEFAULT_SETTINGS)
     return {
-        "eligible": {"urban": urban, "suburban": suburban, "total": total},
-        "selectable": total >= max(min_pool, ROUNDS_PER_GAME),
+        "eligible": {x: by_setting.get(x, 0) for x in ALL_SETTINGS},
+        "selectable": default_total >= max(min_pool, ROUNDS_PER_GAME),
     }
 
 
@@ -35,9 +34,11 @@ def meta(db: Session = Depends(get_db)) -> dict:
     counts = eligible_counts(db, today=today, max_age_years=s.max_price_age_years)
     mp = s.min_pool_per_option
 
-    def cc_counts(code: str) -> tuple[int, int]:
-        c = counts.get(code, {})
-        return c.get("urban", 0), c.get("suburban", 0)
+    def cc_counts(code: str) -> dict[str, int]:
+        return counts.get(code, {})
+
+    def summed(codes) -> dict[str, int]:
+        return {x: sum(cc_counts(c).get(x, 0) for c in codes) for x in ALL_SETTINGS}
 
     countries = [
         {
@@ -48,22 +49,18 @@ def meta(db: Session = Depends(get_db)) -> dict:
             "currency_name": c.currency_name,
             "region": c.region,
             "locale": c.locale,
-            **_counts(*cc_counts(c.code), mp),
+            **_counts(cc_counts(c.code), mp),
         }
         for c in COUNTRIES
     ]
     regions = []
     for r in REGIONS:
-        members = countries_in_region(r.key)
-        u = sum(cc_counts(c.code)[0] for c in members)
-        sub = sum(cc_counts(c.code)[1] for c in members)
+        members = [c.code for c in countries_in_region(r.key)]
         regions.append(
-            {"key": r.key, "name": r.name, "countries": [c.code for c in members]}
-            | _counts(u, sub, mp)
+            {"key": r.key, "name": r.name, "emoji": r.emoji, "countries": members}
+            | _counts(summed(members), mp)
         )
-    wu = sum(v.get("urban", 0) for v in counts.values())
-    ws = sum(v.get("suburban", 0) for v in counts.values())
-    world = _counts(wu, ws, 0)  # World only needs enough for one game
+    world = _counts(summed(counts), 0)  # World only needs enough for one game
 
     sources = db.execute(select(Source).where(Source.enabled.is_(True))).scalars().all()
     return {
@@ -79,10 +76,14 @@ def meta(db: Session = Depends(get_db)) -> dict:
             }
             for src in sources
         ],
-        "daily_number": daily_number(today, s.launch_date),
+        "daily_number": daily_number(quota.utc_today(), s.launch_date),
+        "settings": {"all": list(ALL_SETTINGS), "default": list(DEFAULT_SETTINGS)},
+        "tile_url": s.tile_url,
+        "tile_attribution": s.tile_attribution,
+        "streetview_enabled": quota.google_enabled(),
         "min_pool_per_option": mp,
         "rounds_per_game": ROUNDS_PER_GAME,
         "public_base_url": s.public_base_url,
         "contact_email": s.contact_email,
-        "quota": {"games_available": True},
+        "quota": quota.status(db),
     }

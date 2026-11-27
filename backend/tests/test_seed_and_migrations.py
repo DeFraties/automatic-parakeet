@@ -38,3 +38,39 @@ def test_migrations_match_models(tmp_path):
     assert tables == set(Base.metadata.tables)
     for name, table in Base.metadata.tables.items():
         assert {c["name"] for c in insp.get_columns(name)} == {c.name for c in table.columns}
+
+
+def test_upgrade_with_existing_games(tmp_path):
+    """0003 must upgrade a database that already has played games (FK-referenced rows)."""
+    from sqlalchemy import text
+
+    url = f"sqlite:///{tmp_path / 'u.db'}"
+    cfg = Config(str(Path(__file__).parents[1] / "alembic.ini"))
+    cfg.attributes["database_url"] = url
+    command.upgrade(cfg, "0002")
+    eng = create_engine(url)
+    with eng.begin() as c:
+        c.execute(text("PRAGMA foreign_keys=ON"))
+        c.execute(text("INSERT INTO sources (id, key, display_name, enabled) VALUES (1,'s','S',1)"))
+        c.execute(
+            text(
+                "INSERT INTO properties (id, source_id, source_ref, price_type, price_local,"
+                " currency, price_usd, fx_rate_to_usd, price_date, country_code, city, lat, lng,"
+                " location_precision, setting, property_type, sv_status, is_active, created_at,"
+                " updated_at) VALUES ('p1',1,'r','asking',1,'EUR',1,1,'2025-01-01','FR',"
+                "'Paris',1,1,'exact','urban','house','ok',1,'2025-01-01','2025-01-01')"
+            )
+        )
+        c.execute(
+            text(
+                "INSERT INTO games (id, mode, where_scope, setting_filter, difficulty, created_at)"
+                " VALUES ('g1','classic','world','urban_suburban','normal','2025-01-01')"
+            )
+        )
+        c.execute(
+            text("INSERT INTO game_rounds (game_id, round_no, property_id) VALUES ('g1',1,'p1')")
+        )
+    command.upgrade(cfg, "head")
+    with eng.begin() as c:
+        assert c.execute(text("SELECT setting_filter FROM games")).scalar_one() == "suburban,urban"
+        assert c.execute(text("SELECT count(*) FROM game_rounds")).scalar_one() == 1

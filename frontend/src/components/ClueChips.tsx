@@ -9,6 +9,8 @@ const TYPE_LABEL: Record<string, string> = {
   other: 'Other',
 };
 
+const SETTING_ICON: Record<string, string> = { urban: '🏙️', suburban: '🏡', rural: '🌾' };
+
 const SETTING_LABEL: Record<string, string> = {
   urban: 'Urban',
   suburban: 'Suburban',
@@ -22,7 +24,7 @@ export function ClueChips({ clues }: { clues: Clues }) {
   const chips: { key: string; icon: string; text: string }[] = [
     { key: 'country', icon: clues.flag, text: clues.country },
     { key: 'place', icon: '📍', text: place },
-    { key: 'setting', icon: '🏙️', text: SETTING_LABEL[clues.setting] ?? clues.setting },
+    { key: 'setting', icon: SETTING_ICON[clues.setting] ?? '📍', text: SETTING_LABEL[clues.setting] ?? clues.setting },
     { key: 'type', icon: '🏠', text: TYPE_LABEL[clues.property_type] ?? clues.property_type },
   ];
   if (clues.area_m2) chips.push({ key: 'area', icon: '📐', text: formatArea(clues.area_m2) });

@@ -108,3 +108,57 @@ Choices made where the GDD was ambiguous (GDD §0 rule 8). Newest at the bottom 
 32. **rasterio + pyproj are regular dependencies** (wheels bundle GDAL). The classifier opens the
     raster once per run and uses `DatasetReader.sample`, which handles over 5,000 points/s in
     tests.
+
+## Phase 3
+
+33. **Owner answers to GDD §15** (2026-11-27): (1) keep "Ballpark" / placeholder domain;
+    (2) keep the burnt-orange accent; (3) the Daily Challenge mixes recorded sale and asking
+    prices; (4) no timer, no "extra hard" mode; (5) rural properties are played.
+34. **Neighbourhood toggles replace the Urban / Suburban mode cards** (owner decision). Every
+    Classic game carries a setting selection, any non-empty subset of urban / suburban / rural,
+    **default urban + rural**. The Home screen shows three toggles (at least one stays on); the
+    choice is remembered in localStorage. `games.setting_filter` and
+    `leaderboard_entries.setting_filter` store it in canonical form (alphabetical,
+    comma-joined: `rural,urban`). Leaderboards are kept separate per combination, so "Urban
+    only" or "Suburban only" boards still exist. `POST /api/games` takes `settings: [...]`
+    instead of `mode: urban|suburban`.
+35. **Setting mix in selection**: with two settings selected, at least 2 rounds of each; with
+    three, at least 1 of each (when the pool allows; relaxed otherwise, like the other rules).
+36. **Daily Challenge** is always World with the default settings (urban + rural), mixes price
+    types, and is generated from `sha256(date + DAILY_SALT)`. Lazy generation uses the
+    `daily_challenges.date` primary key as the lock (a racing second insert fails and re-reads).
+    `python -m app.jobs daily` creates it ahead of time (cron container in Phase 4). One attempt
+    per device per UTC day, enforced by the `(date, device_id)` unique constraint. An unfinished
+    Daily can be **resumed** (`GET /api/games/{id}`, same device only) so a page reload doesn't
+    burn the day's attempt. The daily number is clamped to ≥ 1 before `LAUNCH_DATE`.
+37. **Quota**: `sv_usage.urls_issued` counts every signed URL, and `daily_reserved_used` counts
+    those for Daily games. Non-daily games may start while their usage + 5 ≤
+    `GOOGLE_DAILY_QUOTA - DAILY_RESERVED`; the Daily may start while total usage + 5 ≤
+    `GOOGLE_DAILY_QUOTA`. Blocked starts return 503 `quota_exceeded` with the spec's message.
+    Without a Google key/secret, no URLs are issued and the quota never blocks anything.
+38. **Street View at round time**: the panorama location comes from the free metadata endpoint
+    (cached in memory 10 min, never stored) and gives the camera heading. If the lookup fails, the
+    URL is issued without a heading (Google picks a default view). URLs are only issued when a
+    round is actually shown (round 1 at start, round n+1 in the guess response, or on resume).
+39. **Image-error telemetry doesn't delete anything.** A report sends the property back to
+    `sv_status='unchecked'`; the next `ingest streetview-check` re-verifies it and marks it
+    `none` only if Google has no imagery. Only rounds the reporting device has been shown can
+    be reported.
+40. **`streetview-check`** skips `district`-precision records (never playable) to save calls.
+    A Google error (REQUEST_DENIED, OVER_QUERY_LIMIT…) stops the run without marking anything.
+41. **Leaderboard submissions** need the same `X-Device-Id` that played the game, a completed
+    game and a nickname that passes the filter (3–16 chars of letters/digits/space/`.`/`-`/`_`,
+    plus a small multilingual blocklist after leetspeak normalisation). The score is always the
+    server's. One entry per game. "Today" = since 00:00 UTC; "7 days" is rolling.
+42. **Removal path**: `POST /api/removals` (email + listing URL/property ID + message),
+    `ingest removals`, `ingest remove --property-id … [--request N]` (deactivates and
+    blocklists it, and marks the request done), `ingest deactivate --source KEY`. Write
+    endpoints (removals, leaderboard, telemetry) share a per-IP limit
+    (`RATE_LIMIT_WRITES_PER_HOUR`, default 30).
+43. **Simple hash routing** (`#/leaderboards`, `#/about`) instead of a router library.
+44. **Mini map**: Leaflet with OSM tiles (`TILE_URL` / `TILE_ATTRIBUTION`, served via
+    `/api/meta`), a plain circle marker (no image assets), zoom 10, at the server-rounded
+    (~1 km) coordinates. On phones it sits below the guess box so the input stays near the image.
+45. **Migration 0003 doesn't rebuild `games` on SQLite.** SQLite ignores VARCHAR lengths, and
+    rebuilding a table that `game_rounds` references fails once games exist (foreign keys are
+    on). The column is only widened on other databases.

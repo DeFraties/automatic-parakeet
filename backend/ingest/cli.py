@@ -6,8 +6,10 @@ Phase 2 commands:
   stats [--by country,setting]           counts by country / source / sv_status (or custom)
   reclassify-settings                    recompute urban/suburban/rural for every property
   setting-data download                  download the GHSL GHS-SMOD raster
-
-Street View checks and removal commands arrive in Phase 3.
+  streetview-check [--limit N]           fill pano_id / sv_status for unchecked records
+  deactivate --source KEY                bulk-remove a source (takedown)
+  removals                               list pending removal requests
+  remove --property-id UUID [--request N] remove one record + blocklist it
 """
 
 import argparse
@@ -20,7 +22,7 @@ from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal, engine
-from app.models import IngestRun, Property, Source
+from app.models import Blocklist, IngestRun, Property, RemovalRequest, Source
 from ingest.cache import SqliteCache
 from ingest.config import load_sources, settings
 from ingest.fx import FxService, ManualCsvFxProvider
@@ -223,6 +225,82 @@ def cmd_setting_data(args) -> int:
     return 0
 
 
+def cmd_streetview_check(args) -> int:
+    from ingest.streetview import StreetViewChecker, StreetViewCheckError
+
+    try:
+        checker = StreetViewChecker(settings().google_maps_api_key)
+    except StreetViewCheckError as e:
+        print(f"{e}. Add it to .env first.", file=sys.stderr)
+        return 1
+    with SessionLocal() as db:
+        try:
+            counts = checker.run(db, limit=args.limit)
+        except StreetViewCheckError as e:
+            print(f"Stopped: {e}", file=sys.stderr)
+            return 1
+        finally:
+            checker.close()
+    print(f"Street View check: {counts['ok']} ok, {counts['none']} without imagery.")
+    return 0
+
+
+def cmd_deactivate(args) -> int:
+    with SessionLocal() as db:
+        src = db.execute(select(Source).where(Source.key == args.source)).scalar_one_or_none()
+        if src is None:
+            print(f"Unknown source {args.source!r}", file=sys.stderr)
+            return 2
+        n = (
+            db.query(Property)
+            .filter(Property.source_id == src.id, Property.is_active.is_(True))
+            .update({Property.is_active: False})
+        )
+        src.enabled = False
+        db.commit()
+    print(
+        f"Deactivated {n} properties from {args.source}. Also set `enabled: false` for it in "
+        f"sources.yaml so the next run doesn't re-import it."
+    )
+    return 0
+
+
+def cmd_removals(args) -> int:
+    with SessionLocal() as db:
+        q = select(RemovalRequest).order_by(RemovalRequest.created_at)
+        if not args.all:
+            q = q.where(RemovalRequest.status == "pending")
+        rows = db.execute(q).scalars().all()
+    if not rows:
+        print("No pending removal requests.")
+        return 0
+    for r in rows:
+        print(f"#{r.id}  {r.created_at:%Y-%m-%d %H:%M}  [{r.status}]  {r.email}")
+        print(f"     ref: {r.reference}")
+        if r.message:
+            print(f"     msg: {r.message}")
+    print("\nRemove with: python -m ingest remove --property-id <uuid> --request <#>")
+    return 0
+
+
+def cmd_remove(args) -> int:
+    with SessionLocal() as db:
+        prop = db.get(Property, args.property_id)
+        if prop is None:
+            print(f"No property {args.property_id}", file=sys.stderr)
+            return 2
+        prop.is_active = False
+        if db.get(Blocklist, (prop.source_id, prop.source_ref)) is None:
+            db.add(Blocklist(source_id=prop.source_id, source_ref=prop.source_ref))
+        if args.request:
+            req = db.get(RemovalRequest, args.request)
+            if req is not None:
+                req.status = "done"
+        db.commit()
+    print(f"Removed {args.property_id} and blocklisted it; it will never be re-ingested.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m ingest", description="Ballpark data ingestion")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -250,6 +328,23 @@ def build_parser() -> argparse.ArgumentParser:
     sd = sub.add_parser("setting-data", help="manage the GHSL raster")
     sd.add_argument("action", choices=["download"])
     sd.set_defaults(func=cmd_setting_data)
+
+    sv = sub.add_parser("streetview-check", help="fill pano_id for unchecked records")
+    sv.add_argument("--limit", type=int, default=500)
+    sv.set_defaults(func=cmd_streetview_check)
+
+    de = sub.add_parser("deactivate", help="bulk-remove a source (takedown)")
+    de.add_argument("--source", required=True)
+    de.set_defaults(func=cmd_deactivate)
+
+    rm = sub.add_parser("removals", help="list removal requests")
+    rm.add_argument("--all", action="store_true", help="include handled requests")
+    rm.set_defaults(func=cmd_removals)
+
+    rr = sub.add_parser("remove", help="remove one record and blocklist it")
+    rr.add_argument("--property-id", required=True)
+    rr.add_argument("--request", type=int, help="mark this removal request as done")
+    rr.set_defaults(func=cmd_remove)
     return p
 
 

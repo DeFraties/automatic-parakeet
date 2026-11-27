@@ -1,14 +1,11 @@
 import { getDeviceId } from './deviceId';
 
 export type Difficulty = 'normal' | 'hard';
-export type Mode = 'classic' | 'urban' | 'suburban';
+export type Mode = 'classic' | 'daily';
 export type WhereScope = 'world' | 'region' | 'country';
+export type Setting = 'urban' | 'suburban' | 'rural';
 
-export interface Eligible {
-  urban: number;
-  suburban: number;
-  total: number;
-}
+export type Eligible = Record<Setting, number>;
 
 export interface MetaCountry {
   code: string;
@@ -25,6 +22,7 @@ export interface MetaCountry {
 export interface MetaRegion {
   key: string;
   name: string;
+  emoji: string;
   countries: string[];
   eligible: Eligible;
   selectable: boolean;
@@ -40,7 +38,11 @@ export interface Meta {
   rounds_per_game: number;
   public_base_url: string;
   contact_email: string;
-  quota: { games_available: boolean };
+  settings: { all: Setting[]; default: Setting[] };
+  tile_url: string;
+  tile_attribution: string;
+  streetview_enabled: boolean;
+  quota: { games_available: boolean; daily_available: boolean };
 }
 
 export interface Clues {
@@ -106,25 +108,69 @@ export interface SummaryRow {
   score: number | null;
 }
 
+export interface GameHeader {
+  game_id: string;
+  rounds_total: number;
+  mode: Mode;
+  where_scope: WhereScope;
+  where_value: string | null;
+  settings: Setting[];
+  difficulty: Difficulty;
+}
+
 export interface SummaryPayload {
   game_id: string;
   mode: Mode;
   where_scope: WhereScope;
   where_value: string | null;
+  settings: Setting[];
   difficulty: Difficulty;
   total_score: number;
   max_score: number;
   rounds: SummaryRow[];
 }
 
-export interface CreateGameResponse {
-  game_id: string;
-  rounds_total: number;
-  mode: Mode;
-  where_scope: WhereScope;
-  where_value: string | null;
-  difficulty: Difficulty;
+export interface CreateGameResponse extends GameHeader {
   round: RoundPayload;
+}
+
+export interface ResumeResponse extends GameHeader {
+  round?: RoundPayload;
+  score?: number;
+  summary?: SummaryPayload;
+}
+
+export interface DailyStatus {
+  date: string;
+  number: number;
+  played: boolean;
+  completed: boolean;
+  game_id: string | null;
+  score: number | null;
+  difficulty: Difficulty | null;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  nickname: string;
+  score: number;
+  flag: string;
+  date: string;
+}
+
+export interface LeaderboardResponse {
+  mode: Mode;
+  difficulty: Difficulty;
+  entries: LeaderboardEntry[];
+}
+
+export interface LeaderboardQuery {
+  difficulty: Difficulty;
+  where_scope?: WhereScope;
+  where_value?: string | null;
+  settings?: string;
+  period?: 'day' | 'week' | 'all';
+  date?: string;
 }
 
 export interface GuessResponse {
@@ -166,17 +212,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, code, message);
   }
+  if (res.status === 204) return null as T;
   return (await res.json()) as T;
 }
+
+const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
 
 export const api = {
   meta: () => request<Meta>('/meta'),
   createGame: (body: {
-    mode: Mode;
+    mode: 'classic';
     where_scope: WhereScope;
     where_value: string | null;
     difficulty: Difficulty;
-  }) => request<CreateGameResponse>('/games', { method: 'POST', body: JSON.stringify(body) }),
+    settings: Setting[];
+  }) => request<CreateGameResponse>('/games', post(body)),
+  getGame: (gameId: string) => request<ResumeResponse>(`/games/${encodeURIComponent(gameId)}`),
+  daily: () => request<DailyStatus>('/daily'),
+  startDaily: (difficulty: Difficulty) =>
+    request<CreateGameResponse>('/daily/start', post({ difficulty })),
+  leaderboard: (mode: Mode, q: LeaderboardQuery) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v != null && v !== '') params.set(k, String(v));
+    return request<LeaderboardResponse>(`/leaderboards/${mode}?${params}`);
+  },
+  submitScore: (gameId: string, nickname: string) =>
+    request<{ rank: number; nickname: string; score: number }>(
+      '/leaderboards',
+      post({ game_id: gameId, nickname }),
+    ),
+  requestRemoval: (body: { email: string; reference: string; message: string }) =>
+    request<{ id: number; status: string }>('/removals', post(body)),
+  reportImageError: (gameId: string, roundNo: number) =>
+    request<null>('/telemetry/image-error', post({ game_id: gameId, round_no: roundNo })).catch(
+      () => null,
+    ),
   guess: (gameId: string, roundNo: number, amount: number, currency: string) =>
     request<GuessResponse>(`/games/${encodeURIComponent(gameId)}/rounds/${roundNo}/guess`, {
       method: 'POST',

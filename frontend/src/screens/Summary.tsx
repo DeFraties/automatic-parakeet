@@ -1,4 +1,5 @@
-import type { SummaryPayload } from '../api';
+import { useState } from 'react';
+import { ApiError, type SummaryPayload } from '../api';
 import { ShareButton } from '../components/ShareButton';
 import { formatMoney, formatNumber, scoreEmoji } from '../format';
 
@@ -6,11 +7,75 @@ interface Props {
   summary: SummaryPayload;
   shareText: string;
   badge: string;
-  onPlayAgain: () => void;
+  onPlayAgain?: () => void;
   onHome: () => void;
+  onSubmitScore: (nickname: string) => Promise<{ rank: number }>;
 }
 
-export function Summary({ summary, shareText, badge, onPlayAgain, onHome }: Props) {
+function SubmitScore({ onSubmit }: { onSubmit: Props['onSubmitScore'] }) {
+  const [nickname, setNickname] = useState('');
+  const [state, setState] = useState<'idle' | 'sending' | 'done'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [rank, setRank] = useState<number | null>(null);
+
+  if (state === 'done') {
+    return (
+      <p className="card submit-done" role="status">
+        🏆 Saved as <strong>{nickname.trim()}</strong> — you're #{rank} on this board.{' '}
+        <a href="#/leaderboards">See leaderboards</a>
+      </p>
+    );
+  }
+  return (
+    <form
+      className="card submit"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setState('sending');
+        setError(null);
+        try {
+          const r = await onSubmit(nickname.trim());
+          setRank(r.rank);
+          setState('done');
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : 'Could not submit. Try again.');
+          setState('idle');
+        }
+      }}
+    >
+      <label htmlFor="nickname">Submit to leaderboard</label>
+      <div className="submit-row">
+        <input
+          id="nickname"
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          minLength={3}
+          maxLength={16}
+          required
+          placeholder="Nickname (3–16)"
+          autoComplete="nickname"
+        />
+        <button type="submit" className="btn btn-ghost" disabled={state === 'sending'}>
+          Submit
+        </button>
+      </div>
+      {error && (
+        <p className="guess-error" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+export function Summary({
+  summary,
+  shareText,
+  badge,
+  onPlayAgain,
+  onHome,
+  onSubmitScore,
+}: Props) {
   const hard = summary.difficulty === 'hard';
   const guessText = (r: SummaryPayload['rounds'][number]) =>
     r.guess_local == null
@@ -61,13 +126,16 @@ export function Summary({ summary, shareText, badge, onPlayAgain, onHome }: Prop
         </table>
       </div>
       <ShareButton text={shareText} />
+      <SubmitScore onSubmit={onSubmitScore} />
       <div className="actions">
         <button type="button" className="btn btn-ghost" onClick={onHome}>
           Home
         </button>
-        <button type="button" className="btn btn-primary" onClick={onPlayAgain}>
-          Play again
-        </button>
+        {onPlayAgain && (
+          <button type="button" className="btn btn-primary" onClick={onPlayAgain}>
+            Play again
+          </button>
+        )}
       </div>
     </main>
   );

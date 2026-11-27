@@ -1,16 +1,23 @@
 """Street View Static API URL building (Section 7.3).
 
-Phase 1 ships the pure helpers (heading + URL signing). Wiring the live metadata lookup and the
-quota counter happens in Phase 3; until then rounds use a placeholder image.
+At round time: look up the panorama's location with the (free) metadata endpoint, cached in
+memory for 10 minutes and never persisted; point the camera at the property; sign the URL. The
+browser loads the image straight from Google. The server never downloads image bytes.
 """
 
 import base64
 import hashlib
 import hmac
 import math
+import threading
+import time
 from urllib.parse import urlencode, urlparse
 
+import httpx
+
 STREETVIEW_BASE = "https://maps.googleapis.com/maps/api/streetview"
+METADATA_URL = f"{STREETVIEW_BASE}/metadata"
+PANO_CACHE_TTL_S = 600
 ATTRIBUTION = "© Google"
 
 
@@ -32,15 +39,60 @@ def sign_url(url: str, secret_b64: str) -> str:
     return f"{url}&signature={base64.urlsafe_b64encode(sig).decode()}"
 
 
-def build_streetview_url(pano_id: str, heading: float, api_key: str, secret_b64: str) -> str:
-    query = urlencode(
-        {
-            "size": "640x640",
-            "pano": pano_id,
-            "heading": f"{heading:.1f}",
-            "pitch": 5,
-            "fov": 80,
-            "key": api_key,
-        }
-    )
-    return sign_url(f"{STREETVIEW_BASE}?{query}", secret_b64)
+def build_streetview_url(pano_id: str, heading: float | None, api_key: str, secret_b64: str) -> str:
+    params: dict = {"size": "640x640", "pano": pano_id}
+    if heading is not None:
+        params["heading"] = f"{heading:.1f}"
+    params.update({"pitch": 5, "fov": 80, "key": api_key})
+    return sign_url(f"{STREETVIEW_BASE}?{urlencode(params)}", secret_b64)
+
+
+class PanoLocator:
+    """Panorama location lookups via the metadata endpoint, cached in memory for 10 minutes."""
+
+    def __init__(
+        self, transport: httpx.BaseTransport | None = None, ttl_s: float = PANO_CACHE_TTL_S
+    ):
+        self._http = httpx.Client(timeout=5, transport=transport)
+        self._cache: dict[str, tuple[float, tuple[float, float] | None]] = {}
+        self._lock = threading.Lock()
+        self.ttl_s = ttl_s
+
+    def locate(self, pano_id: str, api_key: str) -> tuple[float, float] | None:
+        now = time.monotonic()
+        with self._lock:
+            hit = self._cache.get(pano_id)
+            if hit and now - hit[0] < self.ttl_s:
+                return hit[1]
+        loc = None
+        try:
+            resp = self._http.get(METADATA_URL, params={"pano": pano_id, "key": api_key})
+            data = resp.json() if resp.status_code == 200 else {}
+            if data.get("status") == "OK" and data.get("location"):
+                loc = (float(data["location"]["lat"]), float(data["location"]["lng"]))
+        except (httpx.HTTPError, ValueError):
+            loc = None
+        with self._lock:
+            self._cache[pano_id] = (now, loc)
+            if len(self._cache) > 5000:  # keep memory bounded
+                for k in sorted(self._cache, key=lambda k: self._cache[k][0])[:1000]:
+                    self._cache.pop(k, None)
+        return loc
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+
+locator = PanoLocator()
+
+
+def image_for(
+    pano_id: str | None, lat: float, lng: float, *, api_key: str, secret: str, loc=None
+) -> str | None:
+    """Signed Street View URL facing the property, or None without a key or panorama."""
+    if not (pano_id and api_key and secret):
+        return None
+    pano_loc = loc if loc is not None else locator.locate(pano_id, api_key)
+    heading = initial_bearing(*pano_loc, lat, lng) if pano_loc else None
+    return build_streetview_url(pano_id, heading, api_key, secret)

@@ -149,21 +149,26 @@ def test_invalid_guess_amounts(client, seeded, amount):
     assert res.status_code == 422
 
 
-@pytest.mark.parametrize("mode", ["urban", "suburban"])
-def test_setting_modes_only_contain_matching_setting(client, seeded, mode):
+@pytest.mark.parametrize(
+    "settings", [["urban"], ["suburban"], ["rural"], ["urban", "suburban"], ["suburban", "rural"]]
+)
+def test_setting_toggles_only_contain_selected_settings(client, seeded, settings):
     for _ in range(5):
-        g = _new(client, mode=mode)
+        g = _new(client, settings=settings)
+        assert sorted(g["settings"]) == sorted(settings)
         for n in range(1, 6):
-            assert _prop_for(seeded, g["game_id"], n).setting == mode
+            assert _prop_for(seeded, g["game_id"], n).setting in settings
 
 
-def test_default_games_never_include_rural_or_unknown(client, seeded):
+def test_default_games_are_urban_and_rural(client, seeded):
     settings = Counter()
     for _ in range(10):
         g = _new(client)
+        assert sorted(g["settings"]) == ["rural", "urban"]
         for n in range(1, 6):
             settings[_prop_for(seeded, g["game_id"], n).setting] += 1
-    assert set(settings) <= {"urban", "suburban"}
+    assert set(settings) == {"urban", "rural"}
+    assert settings["urban"] >= 20 and settings["rural"] >= 20  # >= 2 of each per game
 
 
 def test_country_scope(client, seeded):
@@ -194,6 +199,9 @@ def test_region_scope(client, seeded):
         {"where_scope": "country", "where_value": "DE"},
         {"difficulty": "extreme"},
         {"mode": "daily"},
+        {"mode": "urban"},
+        {"settings": []},
+        {"settings": ["beach"]},
     ],
 )
 def test_invalid_create_bodies(client, seeded, body):
@@ -218,11 +226,15 @@ def test_meta(client, seeded):
     m = client.get("/api/meta").json()
     assert len(m["countries"]) == 16
     assert m["world"]["selectable"] is True
-    assert m["world"]["eligible"]["total"] == 40
+    assert m["world"]["eligible"] == {"urban": 19, "suburban": 21, "rural": 11}
     # 50 required per option -> seed counts are too small for any single option.
     assert not any(c["selectable"] for c in m["countries"])
     jp = next(c for c in m["countries"] if c["code"] == "JP")
-    assert jp["eligible"] == {"urban": 2, "suburban": 1, "total": 3}
+    assert jp["eligible"] == {"urban": 2, "suburban": 1, "rural": 1}
+    assert m["settings"] == {"all": ["urban", "suburban", "rural"], "default": ["urban", "rural"]}
+    assert m["tile_url"].startswith("https://tile.openstreetmap.org/")
+    assert m["streetview_enabled"] is False
+    assert m["quota"] == {"games_available": True, "daily_available": True}
     assert {r["key"] for r in m["regions"]} == {
         "north_america",
         "south_america",

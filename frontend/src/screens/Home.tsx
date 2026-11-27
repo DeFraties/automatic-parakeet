@@ -1,13 +1,19 @@
-import type { Difficulty, Meta, Mode } from '../api';
-import { decodeWhere, encodeWhere, type Where } from '../game';
+import type { DailyStatus, Difficulty, Meta, Setting } from '../api';
+import { SettingToggles } from '../components/SettingToggles';
+import { decodeWhere, encodeWhere, isSelectable, settingsLabel, type Where } from '../game';
+import { formatNumber } from '../format';
 
 interface Props {
   meta: Meta | null;
   where: Where;
   difficulty: Difficulty;
+  settings: Setting[];
+  daily: DailyStatus | null;
   onWhereChange: (w: Where) => void;
   onDifficultyChange: (d: Difficulty) => void;
-  onStart: (mode: Mode) => void;
+  onSettingsChange: (s: Setting[]) => void;
+  onStart: () => void;
+  onDaily: () => void;
   starting: boolean;
   error: string | null;
 }
@@ -16,13 +22,30 @@ export function Home({
   meta,
   where,
   difficulty,
+  settings,
+  daily,
   onWhereChange,
   onDifficultyChange,
+  onSettingsChange,
   onStart,
+  onDaily,
   starting,
   error,
 }: Props) {
-  const worldOk = meta?.world.selectable ?? false;
+  const worldOk = meta ? isSelectable(meta.world.eligible, settings, meta, true) : false;
+  const gamesOk = meta?.quota.games_available ?? true;
+  const dailyOk = meta?.quota.daily_available ?? true;
+
+  let dailySub = 'Same 5 homes for everyone today';
+  let dailyCta = 'Play';
+  if (daily?.completed) {
+    dailySub = `✓ Done today · ${formatNumber(daily.score ?? 0)} pts`;
+    dailyCta = 'See leaderboard';
+  } else if (daily?.played) {
+    dailySub = 'In progress';
+    dailyCta = 'Resume';
+  }
+
   return (
     <main className="home" id="main">
       <header className="hero">
@@ -42,22 +65,28 @@ export function Home({
             disabled={!meta}
           >
             <option value="world">🌍 World</option>
-            {meta?.regions.map((r) => (
-              <optgroup key={r.key} label={r.name}>
-                <option value={`region:${r.key}`} disabled={!r.selectable}>
-                  All of {r.name}
-                  {r.selectable ? '' : ' — Coming soon'}
-                </option>
-                {meta.countries
-                  .filter((c) => c.region === r.key)
-                  .map((c) => (
-                    <option key={c.code} value={`country:${c.code}`} disabled={!c.selectable}>
-                      {c.flag} {c.name}
-                      {c.selectable ? '' : ' — Coming soon'}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
+            {meta?.regions.map((r) => {
+              const regionOk = isSelectable(r.eligible, settings, meta);
+              return (
+                <optgroup key={r.key} label={r.name}>
+                  <option value={`region:${r.key}`} disabled={!regionOk}>
+                    All of {r.name}
+                    {regionOk ? '' : ' — Coming soon'}
+                  </option>
+                  {meta.countries
+                    .filter((c) => c.region === r.key)
+                    .map((c) => {
+                      const ok = isSelectable(c.eligible, settings, meta);
+                      return (
+                        <option key={c.code} value={`country:${c.code}`} disabled={!ok}>
+                          {c.flag} {c.name}
+                          {ok ? '' : ' — Coming soon'}
+                        </option>
+                      );
+                    })}
+                </optgroup>
+              );
+            })}
           </select>
         </div>
 
@@ -91,6 +120,13 @@ export function Home({
               : 'Normal: every guess is in US dollars.'}
           </p>
         </div>
+
+        <div className="setting setting-wide">
+          <span className="setting-label" id="settings-label">
+            Neighbourhoods
+          </span>
+          <SettingToggles value={settings} onChange={onSettingsChange} />
+        </div>
       </section>
 
       {error && (
@@ -98,22 +134,47 @@ export function Home({
           {error}
         </p>
       )}
+      {meta && !gamesOk && (
+        <p className="banner" role="status">
+          We've hit today's limit — come back tomorrow (Daily Challenge still works).
+        </p>
+      )}
 
       <section className="modes" aria-label="Game modes">
         <button
           type="button"
           className="mode-card mode-card-primary"
-          onClick={() => onStart('classic')}
-          disabled={starting || !worldOk}
+          onClick={onStart}
+          disabled={starting || !worldOk || !gamesOk}
         >
           <span className="mode-title">Classic</span>
-          <span className="mode-sub">Urban + Suburban · 5 rounds</span>
+          <span className="mode-sub">{settingsLabel(settings)} · 5 rounds</span>
           <span className="mode-cta">{starting ? 'Loading…' : 'Play'}</span>
+        </button>
+        <button
+          type="button"
+          className="mode-card"
+          onClick={onDaily}
+          disabled={starting || (!daily?.played && !dailyOk)}
+        >
+          <span className="mode-title">
+            Daily Challenge {meta ? <span className="mode-num">#{meta.daily_number}</span> : null}
+          </span>
+          <span className="mode-sub">{dailySub}</span>
+          <span className="mode-cta">{dailyCta}</span>
         </button>
       </section>
 
+      <nav className="home-links" aria-label="More">
+        <a href="#/leaderboards">🏆 Leaderboards</a>
+        <a href="#/about">How it works &amp; data</a>
+      </nav>
+
       {meta && !worldOk && (
-        <p className="banner">No playable properties yet. Run <code>make seed</code> to load demo data.</p>
+        <p className="banner">
+          Not enough playable homes for these settings yet. Try turning on more neighbourhood types,
+          or run <code>make seed</code> to load demo data.
+        </p>
       )}
     </main>
   );

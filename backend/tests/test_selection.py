@@ -31,7 +31,9 @@ def make_pool(countries=("FR", "GB", "JP", "US", "BR", "AU"), cities=4, per_city
 @pytest.mark.parametrize("seed", range(30))
 def test_world_rules(seed):
     pool = make_pool()
-    picks = pick_rounds(pool, rng=random.Random(seed), min_pool_per_country=1)
+    picks = pick_rounds(
+        pool, rng=random.Random(seed), min_pool_per_country=1, setting_filter="suburban,urban"
+    )
     assert len(picks) == 5
     assert len({p.id for p in picks}) == 5
     assert len({(p.country_code, p.city) for p in picks}) == 5  # no repeated city
@@ -158,7 +160,7 @@ def test_eligibility_filters(db):
     ids = _make_db_pool(db)
     got = {
         c.id
-        for c in load_candidates(db, today=TODAY, max_age_years=5, setting_filter="urban_suburban")
+        for c in load_candidates(db, today=TODAY, max_age_years=5, setting_filter="suburban,urban")
     }
     assert got == {ids["good"], ids["good_sub"], ids["street"]}
 
@@ -170,7 +172,7 @@ def test_scope_filters(db):
             db,
             today=TODAY,
             max_age_years=5,
-            setting_filter="urban_suburban",
+            setting_filter="suburban,urban",
             where_scope="country",
             where_value="JP",
         )
@@ -182,10 +184,32 @@ def test_scope_filters(db):
                 db,
                 today=TODAY,
                 max_age_years=5,
-                setting_filter="urban_suburban",
+                setting_filter="suburban,urban",
                 where_scope="region",
                 where_value="europe",
             )
         )
         == 3
     )
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_three_settings_get_one_of_each(seed):
+    pool = [
+        Candidate(c.id, c.country_code, c.city, ("urban", "suburban", "rural")[i % 3], c.price_usd)
+        for i, c in enumerate(make_pool())
+    ]
+    picks = pick_rounds(
+        pool, rng=random.Random(seed), min_pool_per_country=1, setting_filter="rural,suburban,urban"
+    )
+    assert {p.setting for p in picks} == {"urban", "suburban", "rural"}
+
+
+def test_encode_settings():
+    from app.core.selection import decode_settings, encode_settings
+
+    assert encode_settings(["urban", "rural", "urban"]) == "rural,urban"
+    assert decode_settings("rural,urban") == ("rural", "urban")
+    for bad in ([], ["beach"]):
+        with pytest.raises(ValueError):
+            encode_settings(bad)

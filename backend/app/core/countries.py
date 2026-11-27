@@ -11,6 +11,7 @@ from dataclasses import dataclass
 class Region:
     key: str
     name: str
+    emoji: str = "🌍"
 
 
 @dataclass(frozen=True)
@@ -26,12 +27,12 @@ class Country:
 
 
 REGIONS: tuple[Region, ...] = (
-    Region("north_america", "North America"),
-    Region("south_america", "South America"),
-    Region("europe", "Europe"),
-    Region("africa", "Africa"),
-    Region("oceania", "Oceania"),
-    Region("east_asia", "East Asia"),
+    Region("north_america", "North America", "🌎"),
+    Region("south_america", "South America", "🌎"),
+    Region("europe", "Europe", "🌍"),
+    Region("africa", "Africa", "🌍"),
+    Region("oceania", "Oceania", "🌏"),
+    Region("east_asia", "East Asia", "🌏"),
 )
 
 COUNTRIES: tuple[Country, ...] = (
@@ -78,3 +79,12 @@ def ecb_currencies() -> list[str]:
 def fallback_currencies() -> list[str]:
     """Launch currencies that need the FallbackFxProvider (not covered by the ECB)."""
     return sorted({c.currency for c in COUNTRIES if not c.in_ecb_fx})
+
+
+def where_flag(where_scope: str, where_value: str | None) -> str:
+    """Flag/emoji for a game's "Where" setting (leaderboards)."""
+    if where_scope == "country" and where_value in COUNTRIES_BY_CODE:
+        return COUNTRIES_BY_CODE[where_value].flag
+    if where_scope == "region" and where_value in REGIONS_BY_KEY:
+        return REGIONS_BY_KEY[where_value].emoji
+    return "🌍"

@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { DailyStatus, Setting } from '../src/api';
 import { Home } from '../src/screens/Home';
 import { Round } from '../src/screens/Round';
 import { makeMeta, makeRound } from './fixtures';
@@ -40,9 +41,13 @@ describe('Home screen', () => {
       meta: makeMeta(['FR']),
       where: { scope: 'world' as const, value: null },
       difficulty: 'normal' as const,
+      settings: ['urban', 'rural'] as Setting[],
+      daily: null as DailyStatus | null,
       onWhereChange: vi.fn(),
       onDifficultyChange: vi.fn(),
+      onSettingsChange: vi.fn(),
       onStart: vi.fn(),
+      onDaily: vi.fn(),
       starting: false,
       error: null,
       ...overrides,
@@ -79,6 +84,6 @@ describe('Home screen', () => {
   it('starts a Classic game', async () => {
     const props = renderHome();
     await userEvent.click(screen.getByRole('button', { name: /Classic/ }));
-    expect(props.onStart).toHaveBeenCalledWith('classic');
+    expect(props.onStart).toHaveBeenCalled();
   });
 });

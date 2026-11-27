@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import games, health, meta
+from app.api import daily, games, health, leaderboards, meta, removals, telemetry
 from app.core.config import get_settings
 
 
@@ -18,7 +18,15 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "X-Device-Id"],
     )
-    for r in (health.router, meta.router, games.router):
+    for r in (
+        health.router,
+        meta.router,
+        games.router,
+        daily.router,
+        leaderboards.router,
+        removals.router,
+        telemetry.router,
+    ):
         app.include_router(r, prefix="/api")
     return app
 

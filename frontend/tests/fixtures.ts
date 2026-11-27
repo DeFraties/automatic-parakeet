@@ -16,8 +16,8 @@ export function makeMeta(selectable: string[] = ['FR', 'JP']): Meta {
     region,
     locale: 'en-US',
     eligible: selectable.includes(code)
-      ? { urban: 40, suburban: 40, total: 80 }
-      : { urban: 1, suburban: 1, total: 2 },
+      ? { urban: 40, suburban: 10, rural: 40 }
+      : { urban: 1, suburban: 1, rural: 1 },
     selectable: selectable.includes(code),
   }));
   const regionKeys = ['north_america', 'south_america', 'europe', 'africa', 'oceania', 'east_asia'];
@@ -26,18 +26,24 @@ export function makeMeta(selectable: string[] = ['FR', 'JP']): Meta {
     regions: regionKeys.map((key) => ({
       key,
       name: key.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      emoji: '🌍',
       countries: countries.filter((c) => c.region === key).map((c) => c.code),
-      eligible: { urban: 0, suburban: 0, total: 0 },
+      eligible:
+        key === 'europe' ? { urban: 60, suburban: 0, rural: 60 } : { urban: 0, suburban: 0, rural: 0 },
       selectable: key === 'europe',
     })),
-    world: { eligible: { urban: 30, suburban: 30, total: 60 }, selectable: true },
+    world: { eligible: { urban: 30, suburban: 30, rural: 30 }, selectable: true },
     sources: [{ key: 'demo', display_name: 'DEMO data (fictional)', homepage: null, license_note: null }],
     daily_number: 1,
     min_pool_per_option: 50,
     rounds_per_game: 5,
     public_base_url: 'https://ballpark.example.com',
     contact_email: 'owner@example.com',
-    quota: { games_available: true },
+    settings: { all: ['urban', 'suburban', 'rural'], default: ['urban', 'rural'] },
+    tile_url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    tile_attribution: '&copy; OpenStreetMap contributors',
+    streetview_enabled: false,
+    quota: { games_available: true, daily_available: true },
   };
 }
 
@@ -93,12 +99,17 @@ export function makeReveal(n: number, score = 4000): RevealPayload {
   };
 }
 
-export function makeSummary(scores: number[], hard = false): SummaryPayload {
+export function makeSummary(
+  scores: number[],
+  hard = false,
+  mode: 'classic' | 'daily' = 'classic',
+): SummaryPayload {
   return {
     game_id: 'g1',
-    mode: 'classic',
+    mode,
     where_scope: 'world',
     where_value: null,
+    settings: ['urban', 'rural'],
     difficulty: hard ? 'hard' : 'normal',
     total_score: scores.reduce((a, b) => a + b, 0),
     max_score: 25_000,

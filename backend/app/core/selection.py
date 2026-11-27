@@ -13,15 +13,28 @@ from app.core.config import ELIGIBLE_USD_MAX, ELIGIBLE_USD_MIN, ROUNDS_PER_GAME
 from app.core.countries import COUNTRY_CODES, countries_in_region
 from app.models import Blocklist, Property
 
-SETTING_FILTERS: dict[str, tuple[str, ...]] = {
-    "urban_suburban": ("urban", "suburban"),
-    "urban": ("urban",),
-    "suburban": ("suburban",),
-}
+ALL_SETTINGS: tuple[str, ...] = ("urban", "suburban", "rural")
+# Owner decision (Phase 3): default games are urban + rural; players toggle settings on/off.
+DEFAULT_SETTINGS: tuple[str, ...] = ("urban", "rural")
+
+
+def encode_settings(settings) -> str:
+    """Canonical storage form of a setting selection, e.g. ["urban", "rural"] -> "rural,urban"."""
+    chosen = sorted(set(settings))
+    if not chosen or any(x not in ALL_SETTINGS for x in chosen):
+        raise ValueError(f"settings must be a non-empty subset of {ALL_SETTINGS}")
+    return ",".join(chosen)
+
+
+def decode_settings(encoded: str) -> tuple[str, ...]:
+    return tuple(x for x in encoded.split(",") if x)
+
+
+DEFAULT_SETTING_FILTER = encode_settings(DEFAULT_SETTINGS)
 
 MAX_PER_COUNTRY = 2
 MIN_QUINTILES = 3
-MIN_EACH_SETTING = 2  # urban + suburban mix in default games
+MIN_EACH_SETTING = 2  # with two settings selected: >= 2 rounds of each (>= 1 each with three)
 ATTEMPTS_PER_LEVEL = 200
 
 
@@ -45,7 +58,9 @@ def _years_ago(today: date, years: int) -> date:
         return today.replace(year=today.year - years, day=28)
 
 
-def eligibility_clauses(today: date, max_age_years: int, setting_filter: str = "urban_suburban"):
+def eligibility_clauses(
+    today: date, max_age_years: int, setting_filter: str = DEFAULT_SETTING_FILTER
+):
     """SQLAlchemy WHERE clauses for a playable property."""
     blocked = exists().where(
         and_(Blocklist.source_id == Property.source_id, Blocklist.source_ref == Property.source_ref)
@@ -58,7 +73,7 @@ def eligibility_clauses(today: date, max_age_years: int, setting_filter: str = "
         Property.price_usd >= ELIGIBLE_USD_MIN,
         Property.price_usd <= ELIGIBLE_USD_MAX,
         Property.price_date >= _years_ago(today, max_age_years),
-        Property.setting.in_(SETTING_FILTERS[setting_filter]),
+        Property.setting.in_(decode_settings(setting_filter)),
         ~blocked,
     ]
 
@@ -93,15 +108,15 @@ def load_candidates(
 
 
 def eligible_counts(db: Session, *, today: date, max_age_years: int) -> dict[str, dict[str, int]]:
-    """{country_code: {"urban": n, "suburban": n}} for all playable properties."""
+    """{country_code: {"urban": n, "suburban": n, "rural": n}} for all playable properties."""
     rows = db.execute(
         select(Property.country_code, Property.setting, func.count())
-        .where(*eligibility_clauses(today, max_age_years, "urban_suburban"))
+        .where(*eligibility_clauses(today, max_age_years, encode_settings(ALL_SETTINGS)))
         .group_by(Property.country_code, Property.setting)
     ).all()
     out: dict[str, dict[str, int]] = {}
     for cc, setting, n in rows:
-        out.setdefault(cc, {"urban": 0, "suburban": 0})[setting] = n
+        out.setdefault(cc, dict.fromkeys(ALL_SETTINGS, 0))[setting] = n
     return out
 
 
@@ -135,7 +150,7 @@ def pick_rounds(
     *,
     rng: random.Random,
     where_scope: str = "world",
-    setting_filter: str = "urban_suburban",
+    setting_filter: str = DEFAULT_SETTING_FILTER,
     min_pool_per_country: int = 50,
     n: int = ROUNDS_PER_GAME,
 ) -> list[Candidate]:
@@ -160,6 +175,8 @@ def pick_rounds(
         weighted = sorted(by_country)
 
     cities_in_pool = len({(c.country_code, c.city) for c in cands})
+    selected = decode_settings(setting_filter)
+    per_setting = MIN_EACH_SETTING if len(selected) == 2 else 1
 
     for rules in _RELAXATION:
         enforce_city = rules.unique_city and not (where_scope == "country" and cities_in_pool < n)
@@ -167,9 +184,8 @@ def pick_rounds(
         need_quint = rules.quintile_spread and pool_quintiles >= MIN_QUINTILES
         need_mix = (
             rules.setting_mix
-            and setting_filter == "urban_suburban"
-            and settings_avail["urban"] >= MIN_EACH_SETTING
-            and settings_avail["suburban"] >= MIN_EACH_SETTING
+            and len(selected) > 1
+            and all(settings_avail[x] >= per_setting for x in selected)
         )
 
         for _ in range(ATTEMPTS_PER_LEVEL):
@@ -189,7 +205,7 @@ def pick_rounds(
                 continue
             if need_mix:
                 s = Counter(p.setting for p in picks)
-                if s["urban"] < MIN_EACH_SETTING or s["suburban"] < MIN_EACH_SETTING:
+                if any(s[x] < per_setting for x in selected):
                     continue
             rng.shuffle(picks)
             return picks

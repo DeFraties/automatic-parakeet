@@ -49,9 +49,16 @@ class Settings(BaseSettings):
         "GHS_SMOD_E2025_GLOBE_R2023A_54009_1000/V2-0/GHS_SMOD_E2025_GLOBE_R2023A_54009_1000_V2_0.zip"
     )
 
+    # Mini map tiles (Section 4.2 / 11). Swap for another provider if traffic grows.
+    tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    tile_attribution: str = (
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    )
+
     # Rate limits (Section 6.1). Set to 0 to disable.
     rate_limit_games_per_hour: int = 30
     rate_limit_guesses_per_hour: int = 120
+    rate_limit_writes_per_hour: int = 30  # leaderboard submissions, removals, telemetry
 
     @property
     def cors_origin_list(self) -> list[str]:

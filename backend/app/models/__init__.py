@@ -94,7 +94,7 @@ class Game(Base):
     mode: Mapped[str] = mapped_column(String(16))  # classic | urban | suburban | daily | hl
     where_scope: Mapped[str] = mapped_column(String(16), default="world")
     where_value: Mapped[str | None] = mapped_column(String(32))
-    setting_filter: Mapped[str] = mapped_column(String(16), default="urban_suburban")
+    setting_filter: Mapped[str] = mapped_column(String(32), default="rural,urban")
     difficulty: Mapped[str] = mapped_column(String(8), default="normal")
     device_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -148,9 +148,11 @@ class LeaderboardEntry(Base):
             "mode",
             "where_scope",
             "where_value",
+            "setting_filter",
             "difficulty",
             "created_at",
         ),
+        Index("ix_leaderboard_daily", "mode", "daily_date", "difficulty"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -158,7 +160,11 @@ class LeaderboardEntry(Base):
     mode: Mapped[str] = mapped_column(String(16))
     where_scope: Mapped[str] = mapped_column(String(16))
     where_value: Mapped[str | None] = mapped_column(String(32))
+    setting_filter: Mapped[str] = mapped_column(
+        String(32), default="rural,urban", server_default="rural,urban"
+    )
     difficulty: Mapped[str] = mapped_column(String(8))
+    daily_date: Mapped[date | None] = mapped_column(Date)  # daily games: the challenge date
     nickname: Mapped[str] = mapped_column(String(16))
     score: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

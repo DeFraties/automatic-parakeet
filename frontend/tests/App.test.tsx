@@ -15,6 +15,9 @@ function mockApi(hard = false) {
     const json = (data: unknown, status = 200) =>
       new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
     if (url === '/api/meta') return json(makeMeta());
+    if (url === '/api/daily')
+      return json({ date: '2026-11-27', number: 1, played: false, completed: false,
+                    game_id: null, score: null, difficulty: null });
     if (url === '/api/games') {
       return json(
         {
@@ -23,6 +26,7 @@ function mockApi(hard = false) {
           mode: 'classic',
           where_scope: 'world',
           where_value: null,
+          settings: body.settings,
           difficulty: body.difficulty,
           round: makeRound(1, hard),
         },
@@ -56,11 +60,12 @@ describe('App game flow', () => {
       where_scope: 'world',
       where_value: null,
       difficulty: 'normal',
+      settings: ['urban', 'rural'],
     });
 
     for (let n = 1; n <= 5; n++) {
       expect(await screen.findByText(`Round ${n}/5`)).toBeInTheDocument();
-      expect(screen.getByText('Classic · World · Normal')).toBeInTheDocument();
+      expect(screen.getByText('Classic · World · Urban + Rural · Normal')).toBeInTheDocument();
       await user.type(screen.getByLabelText('Your guess'), '400k{Enter}');
       expect(await screen.findByLabelText(/points$/)).toBeInTheDocument();
       if (n === 1) {

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import update
 from sqlalchemy.orm import Session, selectinload
 
-from app.core import fx
+from app.core import fx, quota
 from app.core.config import MAX_POINTS, get_settings
 from app.core.countries import COUNTRIES_BY_CODE, REGIONS_BY_KEY
 from app.core.db import get_db
@@ -23,16 +23,23 @@ from app.core.scoring import (
     usd_to_local,
 )
 from app.core.security import client_ip, limiter
-from app.core.selection import PoolTooSmall, load_candidates, pick_rounds
+from app.core.selection import (
+    DEFAULT_SETTINGS,
+    PoolTooSmall,
+    decode_settings,
+    encode_settings,
+    load_candidates,
+    pick_rounds,
+)
+from app.core.streetview_urls import ATTRIBUTION, image_for
 from app.models import Game, GameRound, Property, utcnow
 
 router = APIRouter()
 
-Mode = Literal["classic", "urban", "suburban"]
+Mode = Literal["classic"]
 Difficulty = Literal["normal", "hard"]
 WhereScope = Literal["world", "region", "country"]
-
-MODE_SETTING_FILTER = {"classic": "urban_suburban", "urban": "urban", "suburban": "suburban"}
+Setting = Literal["urban", "suburban", "rural"]
 
 
 class CreateGameIn(BaseModel):
@@ -40,6 +47,9 @@ class CreateGameIn(BaseModel):
     where_scope: WhereScope = "world"
     where_value: str | None = Field(default=None, max_length=32)
     difficulty: Difficulty = "normal"
+    settings: list[Setting] = Field(
+        default_factory=lambda: list(DEFAULT_SETTINGS), min_length=1, max_length=3
+    )
 
     @model_validator(mode="after")
     def _check_where(self):
@@ -78,11 +88,17 @@ def round_payload(db: Session, game: Game, r: GameRound) -> dict:
     hard = game.difficulty == "hard"
     guess_currency = p.currency if hard else "USD"
     smin, smax = slider_bounds(guess_currency, _rate_for(db, p) if hard else None)
+    s = get_settings()
+    url = image_for(
+        p.pano_id, p.lat, p.lng, api_key=s.google_maps_api_key, secret=s.google_url_signing_secret
+    )
+    if url:
+        quota.record_url(db, daily=game.mode == "daily")
     return {
         "round_no": r.round_no,
         "rounds_total": len(game.rounds),
-        "streetview_url": None,  # Phase 3: signed Street View URL. Client shows a placeholder.
-        "attribution": None,
+        "streetview_url": url,  # None -> client shows a placeholder card
+        "attribution": ATTRIBUTION if url else None,
         "difficulty": game.difficulty,
         "guess_currency": guess_currency,
         "local_currency": p.currency,
@@ -157,6 +173,7 @@ def summary_payload(game: Game) -> dict:
         "mode": game.mode,
         "where_scope": game.where_scope,
         "where_value": game.where_value,
+        "settings": list(decode_settings(game.setting_filter)),
         "difficulty": game.difficulty,
         "total_score": game.total_score,
         "max_score": MAX_POINTS * len(game.rounds),
@@ -176,6 +193,52 @@ def _load_game(db: Session, game_id: str) -> Game:
     return game
 
 
+def game_header(game: Game) -> dict:
+    return {
+        "game_id": game.id,
+        "rounds_total": len(game.rounds),
+        "mode": game.mode,
+        "where_scope": game.where_scope,
+        "where_value": game.where_value,
+        "settings": list(decode_settings(game.setting_filter)),
+        "difficulty": game.difficulty,
+    }
+
+
+def quota_error() -> HTTPException:
+    return _error(
+        503,
+        "quota_exceeded",
+        "We've hit today's limit — come back tomorrow (Daily Challenge still works).",
+    )
+
+
+def start_game(
+    db: Session,
+    *,
+    mode: str,
+    where_scope: str,
+    where_value: str | None,
+    setting_filter: str,
+    difficulty: str,
+    device_id: str | None,
+    property_ids: list[str],
+) -> dict:
+    game = Game(
+        mode=mode,
+        where_scope=where_scope,
+        where_value=where_value,
+        setting_filter=setting_filter,
+        difficulty=difficulty,
+        device_id=device_id,
+    )
+    game.rounds = [GameRound(round_no=i + 1, property_id=pid) for i, pid in enumerate(property_ids)]
+    db.add(game)
+    db.commit()
+    game = _load_game(db, game.id)
+    return {**game_header(game), "round": round_payload(db, game, game.rounds[0])}
+
+
 @router.post("/games", status_code=201)
 def create_game(
     body: CreateGameIn,
@@ -185,7 +248,9 @@ def create_game(
 ) -> dict:
     s = get_settings()
     limiter.check(f"games:{client_ip(request)}", s.rate_limit_games_per_hour)
-    setting_filter = MODE_SETTING_FILTER[body.mode]
+    if not quota.can_start_game(db, daily=False):
+        raise quota_error()
+    setting_filter = encode_settings(body.settings)
     cands = load_candidates(
         db,
         today=date.today(),
@@ -204,28 +269,29 @@ def create_game(
         )
     except PoolTooSmall as e:
         raise _error(422, "pool_too_small", "Not enough properties for these settings yet.") from e
-
-    game = Game(
+    return start_game(
+        db,
         mode=body.mode,
         where_scope=body.where_scope,
         where_value=body.where_value,
         setting_filter=setting_filter,
         difficulty=body.difficulty,
         device_id=device_id,
+        property_ids=[c.id for c in picks],
     )
-    game.rounds = [GameRound(round_no=i + 1, property_id=c.id) for i, c in enumerate(picks)]
-    db.add(game)
-    db.commit()
-    game = _load_game(db, game.id)
-    return {
-        "game_id": game.id,
-        "rounds_total": len(game.rounds),
-        "mode": game.mode,
-        "where_scope": game.where_scope,
-        "where_value": game.where_value,
-        "difficulty": game.difficulty,
-        "round": round_payload(db, game, game.rounds[0]),
-    }
+
+
+@router.get("/games/{game_id}")
+def get_game(game_id: str, device_id: DeviceId = None, db: Session = Depends(get_db)) -> dict:
+    """Resume a game (e.g. after a reload): the current round, or the summary when finished."""
+    game = _load_game(db, game_id)
+    if game.device_id and game.device_id != device_id:
+        raise _error(404, "game_not_found", "Game not found.")
+    if game.completed_at is not None:
+        return {**game_header(game), "summary": summary_payload(game)}
+    current = next(r for r in game.rounds if r.score is None)
+    score = sum(r.score or 0 for r in game.rounds)
+    return {**game_header(game), "score": score, "round": round_payload(db, game, current)}
 
 
 @router.post("/games/{game_id}/rounds/{round_no}/guess")

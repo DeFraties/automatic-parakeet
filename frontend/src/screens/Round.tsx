@@ -1,6 +1,7 @@
 import type { RoundPayload } from '../api';
 import { ClueChips } from '../components/ClueChips';
 import { GuessInput } from '../components/GuessInput';
+import { MiniMap } from '../components/MiniMap';
 import { StreetViewImage } from '../components/StreetViewImage';
 import { currencyName, currencySymbol, formatNumber } from '../format';
 
@@ -11,9 +12,22 @@ interface Props {
   submitting: boolean;
   error: string | null;
   onGuess: (amount: number) => void;
+  onImageError?: () => void;
+  tileUrl?: string;
+  tileAttribution?: string;
 }
 
-export function Round({ round, score, badge, submitting, error, onGuess }: Props) {
+export function Round({
+  round,
+  score,
+  badge,
+  submitting,
+  error,
+  onGuess,
+  onImageError,
+  tileUrl,
+  tileAttribution,
+}: Props) {
   const { clues } = round;
   const hard = round.difficulty === 'hard';
   const cur = round.guess_currency;
@@ -34,6 +48,7 @@ export function Round({ round, score, badge, submitting, error, onGuess }: Props
           url={round.streetview_url}
           attribution={round.attribution}
           alt={`Street View of a property in ${clues.city}, ${clues.country}`}
+          onError={onImageError}
         />
         <div className="round-side">
           <ClueChips clues={clues} />
@@ -53,6 +68,15 @@ export function Round({ round, score, badge, submitting, error, onGuess }: Props
               </p>
             )}
           </div>
+          {tileUrl && (
+            <MiniMap
+              lat={round.map.lat_approx}
+              lng={round.map.lng_approx}
+              tileUrl={tileUrl}
+              attribution={tileAttribution ?? ''}
+              label={`Map showing the area around ${clues.city}, ${clues.country}`}
+            />
+          )}
         </div>
       </div>
     </main>
