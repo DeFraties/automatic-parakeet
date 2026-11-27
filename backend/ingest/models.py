@@ -1,8 +1,9 @@
 """The ONLY shape a source plugin may return (Section 5.1 / 8.3).
 
-There are deliberately no fields for images, descriptions, agent/owner details or street
-addresses, and `slots=True` means a plugin can't attach extra attributes either — so that kind of
-data can't be stored by accident.
+There are deliberately no fields for descriptions, agent/owner details or street addresses, and
+`slots=True` means a plugin can't attach extra attributes either, so that kind of data can't be
+stored by accident. A listing photo is allowed only as a URL on the source (`image_url`): it's
+hotlinked at play time and the image bytes are never downloaded or stored.
 """
 
 from dataclasses import dataclass, fields
@@ -33,6 +34,7 @@ class NormalizedListing:
     property_type: PropertyType
     region: str | None = None
     listing_url: str | None = None
+    image_url: str | None = None  # main listing photo, absolute http(s) URL on the source
     area_m2: float | None = None
     bedrooms: int | None = None
     bathrooms: int | None = None

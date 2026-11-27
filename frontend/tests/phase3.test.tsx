@@ -148,7 +148,7 @@ describe('App: Classic with settings', () => {
       if (url === '/api/games')
         return { game_id: 'g1', rounds_total: 5, mode: 'classic', where_scope: 'world', where_value: null,
                  settings: body.settings, difficulty: 'normal',
-                 round: { ...makeRound(1), streetview_url: 'https://maps.googleapis.com/x', attribution: '© Google' } };
+                 round: { ...makeRound(1), image_url: 'https://cdn.mly.test/1.jpg', image_source: 'mapillary', attribution: '© Mapillary contributors · CC BY-SA 4.0' } };
       if (url === '/api/telemetry/image-error') return new Response(null, { status: 204 });
     });
     const user = userEvent.setup();
@@ -159,12 +159,12 @@ describe('App: Classic with settings', () => {
     await user.click(screen.getByRole('button', { name: /Classic/ }));
     expect(calls.find((c) => c.url === '/api/games')!.body.settings).toEqual(['urban', 'suburban']);
     expect(await screen.findByText('Classic · World · Urban + Suburban · Normal')).toBeInTheDocument();
-    expect(screen.getByText('© Google')).toBeInTheDocument();
+    expect(screen.getByText('© Mapillary contributors · CC BY-SA 4.0')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Map showing the area around City1/ })).toBeInTheDocument();
-    fireEvent.error(screen.getByRole('img', { name: /Street View of a property in City1/ }));
-    expect(await screen.findByText('No street image available')).toBeInTheDocument();
+    fireEvent.error(screen.getByRole('img', { name: /Photo of a property in City1/ }));
+    expect(await screen.findByText('No photo for this one. Use the clues!')).toBeInTheDocument();
     await waitFor(() =>
-      expect(calls.find((c) => c.url === '/api/telemetry/image-error')!.body).toEqual({ game_id: 'g1', round_no: 1 }),
+      expect(calls.find((c) => c.url === '/api/telemetry/image-error')!.body).toEqual({ game_id: 'g1', round_no: 1, source: 'mapillary' }),
     );
   });
 });
@@ -211,5 +211,22 @@ describe('About page', () => {
     await user.click(screen.getByRole('button', { name: 'Send removal request' }));
     expect(await screen.findByText(/within 72 hours/)).toBeInTheDocument();
     expect(calls[0].body).toEqual({ email: 'me@example.com', reference: 'https://example.com/x', message: '' });
+  });
+});
+
+describe('PropertyImage', () => {
+  it('shows a listing photo with its credit', async () => {
+    const { PropertyImage } = await import('../src/components/PropertyImage');
+    render(<PropertyImage url="https://photos.example/1.jpg" alt="Photo of a property in Leeds, United Kingdom"
+             attribution="Photo: Example Homes" setting="suburban" propertyType="house" />);
+    expect(screen.getByRole('img', { name: /Photo of a property in Leeds/ })).toHaveAttribute('src', 'https://photos.example/1.jpg');
+    expect(screen.getByText('Photo: Example Homes')).toBeInTheDocument();
+  });
+
+  it('illustrated card is themed by setting and type', async () => {
+    const { PropertyImage } = await import('../src/components/PropertyImage');
+    const { container } = render(<PropertyImage url={null} alt="x" attribution={null} setting="rural" propertyType="house" />);
+    expect(screen.getByRole('img', { name: 'Illustration of a rural house (no photo available)' })).toBeInTheDocument();
+    expect(container.querySelector('.scene-rural')).not.toBeNull();
   });
 });

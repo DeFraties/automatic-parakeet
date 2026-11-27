@@ -4,6 +4,14 @@
 > **Type:** Browser game, self-hosted
 > **One-liner:** Players see a real property somewhere in the world (Street View + a few clues) and guess what it sold or is listed for. Closer guesses score more.
 
+> **Owner changes since v1** (details in `docs/DECISIONS.md`):
+> - 2026-11-27: default neighbourhoods are **urban + rural**, with urban / suburban / rural
+>   toggles replacing the Urban and Suburban mode cards (§2.5).
+> - 2026-11-27: **listing photos may be shown**, hotlinked from the source and never copied
+>   (§5.1, §5.2, §12 rule 1). **Mapillary** street-level photos added as a free alternative to
+>   Google Street View, which becomes optional (§7). Homes without any photo are playable with an
+>   illustrated card (§5.3).
+
 ---
 
 ## 0. How to use this document (instructions for Claude Code)
@@ -37,7 +45,7 @@ You are building this project from scratch. Follow these rules:
 - **Surprise:** "THAT costs €2.1M?" moments. Mix cheap and expensive, rural and urban, many countries.
 - **Fairness:** Scoring is proportional (log-based), so a $5M mansion and a $60k cabin are equally hard.
 - **Speed:** A full game takes 2–4 minutes. No account required to play.
-- **Respect for sources:** Facts only, always link back, no stored photos.
+- **Respect for sources:** Facts only, always link back, credit every photo, never copy one.
 
 ### 1.3 Target platforms
 - Desktop and mobile browsers (responsive, mobile-first layout)
@@ -230,19 +238,24 @@ Make `MAX_POINTS` (5000) and `ZERO_POINT_RATIO` (3) config constants.
 | bedrooms, bathrooms | no | |
 | year_built | no | |
 | pano_id | no | Google Street View panorama ID (allowed to be stored) |
+| image_url | no | URL of the main listing photo **on the source** (hotlinked at play time; image bytes never stored) |
+| mly_image_id, mly_status | no / yes | Mapillary image ID and check status (`unchecked`, `ok`, `none`) |
 | sv_status | yes | `unchecked`, `ok`, `none` |
 | is_active | yes | false = excluded from play |
 | created_at, updated_at | yes | |
 
 ### 5.2 What is NEVER stored
-- Listing photos or any images from listing sites
+- Image files (bytes) of any kind: listing photos are kept only as a URL on the source and loaded
+  live by the player's browser (§12 rule 1)
 - Google Street View images, Google geocoding results, or any Google content except `pano_id`
 - Agent/owner names, phone numbers, emails, or free-text descriptions
 - Exact street addresses (keep only city/region plus coordinates)
 
 ### 5.3 Eligibility for play
 A property is playable only if:
-- `is_active = true` and `sv_status = 'ok'`
+- `is_active = true`, and, when `ALLOW_IMAGELESS_ROUNDS=false`, it has a photo (listing photo,
+  Mapillary image or Street View panorama). By default homes without a photo are playable with an
+  illustrated card, and selection prefers homes that have a photo
 - `country_code` is one of the 16 launch countries
 - `location_precision` is `exact` or `street` (otherwise Street View might show the wrong place)
 - `price_usd` is between $5,000 and $100,000,000
@@ -352,6 +365,23 @@ ballpark.example.com
 - If an image fails to load on the client, show a placeholder card ("No street image available") and let the player continue. Log it to `/api/telemetry/image-error` so the property can be marked `sv_status='none'`.
 
 ---
+
+### 7.5 Image sources and order (owner change 2026-11-27)
+At round time the server picks the first available image:
+1. **Listing photo** (`image_url`): the source's own main photo, loaded by the browser straight
+   from the source with the default referrer (no hotlink-protection workarounds; if the site
+   blocks it, the client falls back). Credit: "Photo: {source name}"; the reveal links back.
+2. **Google Street View**: only when `GOOGLE_MAPS_API_KEY` and the signing secret are set
+   (§7.1–7.4 unchanged).
+3. **Mapillary**: free, CC BY-SA 4.0 street-level photos. `ingest mapillary-check` stores the ID
+   of a nearby non-panoramic image (≤ 60 m) whose camera faces the house. At round time the
+   server resolves the current thumbnail URL via the Graph API (cached in memory for 1 h, never
+   stored). Credit: "© Mapillary contributors · CC BY-SA 4.0". Token: `MAPILLARY_TOKEN`.
+4. **Illustrated card** themed by setting and property type.
+
+A client-side load failure reports `{game_id, round_no, source}`. The server then forgets only
+that link (listing URL cleared until the next ingest, Google or Mapillary sent back for
+re-checking). It never removes the home.
 
 ## 8. Data ingestion (scraper framework)
 
@@ -616,7 +646,7 @@ FX_MANUAL_CSV=./data/fx_manual.csv
 - Frontend bundle < 250 KB gzipped (excluding map tiles)
 - No third-party analytics in MVP. If added later, use a privacy-friendly self-hosted option
 - Collect no personal data except: device UUID, optional nickname, removal-request email
-- Security headers via Caddy (CSP allowing `maps.googleapis.com` images and OSM tile servers, HSTS, X-Content-Type-Options)
+- Security headers via Caddy (CSP allowing `https:` images, since listing photos are hotlinked from their sources, HSTS, X-Content-Type-Options)
 - Input validation with Pydantic on every endpoint; parameterized queries only
 - OSM tiles: follow the OpenStreetMap tile usage policy (attribution, valid referrer, low volume). Make the tile URL configurable so a different tile provider can be swapped in if traffic grows
 
@@ -624,15 +654,22 @@ FX_MANUAL_CSV=./data/fx_manual.csv
 
 ## 12. Compliance rules (hard requirements)
 
-1. **Facts only.** Never store listing photos, descriptions, or personal/contact data (enforced by the `NormalizedListing` schema).
-2. **No Google content storage** except `pano_id`. No proxying or caching Street View images. Signed URLs only. Attribution visible.
+1. **Facts plus a linked photo.** Never store descriptions or personal/contact data (enforced by
+   the `NormalizedListing` schema). *(Changed by the owner, 2026-11-27.)* A source's main listing
+   photo **may be shown**, but only as a URL on the source that the player's browser loads
+   directly. We never download, proxy, cache, crop or re-host image files, the photo is always
+   credited to its source with a link back, and any source's photos can be switched off
+   (`photos: false` in sources.yaml) and purged (`ingest strip-photos --source KEY`) at once on
+   request. The owner accepts the copyright risk of showing third-party listing photos and
+   should revisit it before any monetization (rule 8).
+2. **No Google content storage** except `pano_id`. No proxying or caching Street View images. Signed URLs only. Attribution visible. **Mapillary**: store only the image ID, show the CC BY-SA attribution with every image.
 3. **No Google geocoding.** Coordinates come from the source, postcodes.io, or Nominatim (max 1 req/s, cached, with a proper User-Agent).
 4. **Polite scraping:** robots.txt respected, per-domain delays, honest User-Agent, logged out, caching, and stop on block. **No circumvention of any kind.**
 5. **Link back** to the original listing on the reveal screen when a URL exists, and credit the source.
 6. **Removal path:** public removal form, CLI to remove a record or a whole source, and a blocklist so removed items never return. Target: act within 72 hours.
 7. **Open data licenses:** show the required attribution for each open dataset on the About page (e.g., "Contains HM Land Registry data © Crown copyright and database right [year]. This data is licensed under the Open Government Licence v3.0.").
 8. **Non-commercial at launch:** no ads or payments. If monetization is added later, revisit every source's terms first.
-9. `docs/SOURCES.md` must contain a checklist that every new source plugin has to pass: robots.txt allows the paths, logged-out access, no images/PII fields, delay ≥ 2 s, attribution added, link-back implemented.
+9. `docs/SOURCES.md` must contain a checklist that every new source plugin has to pass: robots.txt allows the paths, logged-out access, no PII fields, photos as URLs only (or `photos: false`), delay ≥ 2 s, attribution added, link-back implemented.
 
 ---
 

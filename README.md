@@ -10,9 +10,9 @@ spec was ambiguous are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ## Status
 
-**Phase 3 — Street View + Daily** ✅ Live Street View images (signed URLs, daily quota),
-OpenStreetMap mini map, Daily Challenge, leaderboards, urban / suburban / rural toggles, About
-page with a removal form, and removal CLI commands.
+**Phase 3 — images + Daily** ✅ Listing photos (hotlinked), Mapillary and optional Google Street
+View, illustrated fallback cards, OpenStreetMap mini map, Daily Challenge, leaderboards,
+urban / suburban / rural toggles, About page with a removal form, and removal CLI commands.
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -53,15 +53,19 @@ try region presets in development.
 
 ## Going live with real data
 
-1. **Google Street View key** (needed for real images and to make imported data playable):
-   in Google Cloud Console create a project with billing, enable the **Street View Static API**,
-   create an API key restricted to that API, and copy the **URL signing secret** (Google Maps
-   Platform → Credentials). Put both in `.env` as `GOOGLE_MAPS_API_KEY` and
-   `GOOGLE_URL_SIGNING_SECRET`. `GOOGLE_DAILY_QUOTA` (default 300 images/day) caps cost.
-2. **Import data** (see below), then mark which homes have Street View imagery:
-   `make ingest ARGS="streetview-check --limit 2000"` (free metadata calls).
+Imported homes are playable straight away. Homes without a photo show an illustrated card.
+Photos come from, in order: the listing source's own photo (hotlinked, credited) → Google Street
+View (optional) → Mapillary → the illustrated card.
+
+1. **Free photos via Mapillary** (recommended): create a free account and an app at
+   https://www.mapillary.com/dashboard/developers, put its client token in `.env` as
+   `MAPILLARY_TOKEN`, then `make ingest ARGS="mapillary-check --limit 2000"`.
+2. **Optional: Google Street View** (paid beyond the free tier): in Google Cloud Console enable
+   the **Street View Static API**, create a key restricted to it plus a **URL signing secret**,
+   set `GOOGLE_MAPS_API_KEY` / `GOOGLE_URL_SIGNING_SECRET`, then
+   `make ingest ARGS="streetview-check --limit 2000"`. `GOOGLE_DAILY_QUOTA` caps cost.
 3. Optionally remove the demo data from play: `make ingest ARGS="deactivate --source demo"`.
-4. Check what's playable: `make ingest ARGS="stats --by source,sv_status"`.
+4. Check coverage: `make ingest ARGS="stats --by source,setting"`.
 
 The Daily Challenge for a day is created on its first request (or ahead of time with
 `backend/.venv/bin/python -m app.jobs daily`). Removal requests from the About page are listed

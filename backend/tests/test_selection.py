@@ -162,7 +162,40 @@ def test_eligibility_filters(db):
         c.id
         for c in load_candidates(db, today=TODAY, max_age_years=5, setting_filter="suburban,urban")
     }
-    assert got == {ids["good"], ids["good_sub"], ids["street"]}
+    # Imageless homes are playable by default (illustrated card), whatever their image checks say.
+    assert got == {ids[k] for k in ("good", "good_sub", "street", "no_sv", "unchecked")}
+
+
+def test_eligibility_requires_an_image_when_imageless_disabled(db, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "allow_imageless_rounds", False)
+    ids = _make_db_pool(db)
+    p = {k: db.get(Property, v) for k, v in ids.items()}
+    p["good"].pano_id = "PANO"  # sv ok + pano
+    p["good_sub"].image_url = "https://img.example/1.jpg"  # listing photo
+    p["street"].sv_status = "none"
+    p["street"].mly_status, p["street"].mly_image_id = "ok", "123"  # Mapillary
+    p["unchecked"].mly_status = "ok"  # ok but no id -> no image
+    db.commit()
+    got = {
+        c.id: c.has_image
+        for c in load_candidates(db, today=TODAY, max_age_years=5, setting_filter="suburban,urban")
+    }
+    assert got == {ids["good"]: True, ids["good_sub"]: True, ids["street"]: True}
+
+
+def test_prefers_homes_with_images():
+    pool = [
+        Candidate(c.id, c.country_code, c.city, c.setting, c.price_usd, has_image=i % 4 == 0)
+        for i, c in enumerate(make_pool())
+    ]
+    picks = [
+        p
+        for s in range(30)
+        for p in pick_rounds(pool, rng=random.Random(s), setting_filter="suburban,urban")
+    ]
+    assert sum(p.has_image for p in picks) >= 120  # of 150 picks; only 25% of the pool has one
 
 
 def test_scope_filters(db):
@@ -189,7 +222,7 @@ def test_scope_filters(db):
                 where_value="europe",
             )
         )
-        == 3
+        == 5
     )
 
 

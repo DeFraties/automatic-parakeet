@@ -49,6 +49,11 @@ class Settings(BaseSettings):
         "GHS_SMOD_E2025_GLOBE_R2023A_54009_1000/V2-0/GHS_SMOD_E2025_GLOBE_R2023A_54009_1000_V2_0.zip"
     )
 
+    # Images (Section 7). Mapillary client token: https://www.mapillary.com/dashboard/developers
+    mapillary_token: str = ""
+    # Play homes with no photo at all (an illustrated card is shown instead)
+    allow_imageless_rounds: bool = True
+
     # Mini map tiles (Section 4.2 / 11). Swap for another provider if traffic grows.
     tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     tile_attribution: str = (

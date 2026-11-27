@@ -64,7 +64,8 @@ export interface Clues {
 export interface RoundPayload {
   round_no: number;
   rounds_total: number;
-  streetview_url: string | null;
+  image_url: string | null;
+  image_source: 'listing' | 'google' | 'mapillary' | null;
   attribution: string | null;
   difficulty: Difficulty;
   guess_currency: string;
@@ -243,10 +244,11 @@ export const api = {
     ),
   requestRemoval: (body: { email: string; reference: string; message: string }) =>
     request<{ id: number; status: string }>('/removals', post(body)),
-  reportImageError: (gameId: string, roundNo: number) =>
-    request<null>('/telemetry/image-error', post({ game_id: gameId, round_no: roundNo })).catch(
-      () => null,
-    ),
+  reportImageError: (gameId: string, roundNo: number, source: string) =>
+    request<null>(
+      '/telemetry/image-error',
+      post({ game_id: gameId, round_no: roundNo, source }),
+    ).catch(() => null),
   guess: (gameId: string, roundNo: number, amount: number, currency: string) =>
     request<GuessResponse>(`/games/${encodeURIComponent(gameId)}/rounds/${roundNo}/guess`, {
       method: 'POST',

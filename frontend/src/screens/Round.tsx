@@ -2,7 +2,7 @@ import type { RoundPayload } from '../api';
 import { ClueChips } from '../components/ClueChips';
 import { GuessInput } from '../components/GuessInput';
 import { MiniMap } from '../components/MiniMap';
-import { StreetViewImage } from '../components/StreetViewImage';
+import { PropertyImage } from '../components/PropertyImage';
 import { currencyName, currencySymbol, formatNumber } from '../format';
 
 interface Props {
@@ -44,10 +44,12 @@ export function Round({
         </span>
       </div>
       <div className="round-layout">
-        <StreetViewImage
-          url={round.streetview_url}
+        <PropertyImage
+          url={round.image_url}
           attribution={round.attribution}
-          alt={`Street View of a property in ${clues.city}, ${clues.country}`}
+          setting={clues.setting}
+          propertyType={clues.property_type}
+          alt={`Photo of a property in ${clues.city}, ${clues.country}`}
           onError={onImageError}
         />
         <div className="round-side">

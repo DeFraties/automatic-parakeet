@@ -51,7 +51,8 @@ export function makeRound(n: number, hard = false): RoundPayload {
   return {
     round_no: n,
     rounds_total: 5,
-    streetview_url: null,
+    image_url: null,
+    image_source: null,
     attribution: null,
     difficulty: hard ? 'hard' : 'normal',
     guess_currency: hard ? 'JPY' : 'USD',

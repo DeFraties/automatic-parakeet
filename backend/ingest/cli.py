@@ -7,6 +7,8 @@ Phase 2 commands:
   reclassify-settings                    recompute urban/suburban/rural for every property
   setting-data download                  download the GHSL GHS-SMOD raster
   streetview-check [--limit N]           fill pano_id / sv_status for unchecked records
+  mapillary-check [--limit N]            find a Mapillary photo for unchecked records
+  strip-photos --source KEY              forget a source's listing photo URLs (photo takedown)
   deactivate --source KEY                bulk-remove a source (takedown)
   removals                               list pending removal requests
   remove --property-id UUID [--request N] remove one record + blocklist it
@@ -245,6 +247,45 @@ def cmd_streetview_check(args) -> int:
     return 0
 
 
+def cmd_mapillary_check(args) -> int:
+    from ingest.mapillary import MapillaryChecker, MapillaryCheckError
+
+    try:
+        checker = MapillaryChecker(settings().mapillary_token)
+    except MapillaryCheckError as e:
+        print(f"{e}. Add it to .env first.", file=sys.stderr)
+        return 1
+    with SessionLocal() as db:
+        try:
+            counts = checker.run(db, limit=args.limit)
+        except MapillaryCheckError as e:
+            print(f"Stopped: {e}", file=sys.stderr)
+            return 1
+        finally:
+            checker.close()
+    print(f"Mapillary check: {counts['ok']} with a photo, {counts['none']} without.")
+    return 0
+
+
+def cmd_strip_photos(args) -> int:
+    with SessionLocal() as db:
+        src = db.execute(select(Source).where(Source.key == args.source)).scalar_one_or_none()
+        if src is None:
+            print(f"Unknown source {args.source!r}", file=sys.stderr)
+            return 2
+        n = (
+            db.query(Property)
+            .filter(Property.source_id == src.id, Property.image_url.is_not(None))
+            .update({Property.image_url: None})
+        )
+        db.commit()
+    print(
+        f"Removed {n} photo links from {args.source}. Also set `photos: false` for it in "
+        f"sources.yaml so the next run doesn't bring them back."
+    )
+    return 0
+
+
 def cmd_deactivate(args) -> int:
     with SessionLocal() as db:
         src = db.execute(select(Source).where(Source.key == args.source)).scalar_one_or_none()
@@ -332,6 +373,14 @@ def build_parser() -> argparse.ArgumentParser:
     sv = sub.add_parser("streetview-check", help="fill pano_id for unchecked records")
     sv.add_argument("--limit", type=int, default=500)
     sv.set_defaults(func=cmd_streetview_check)
+
+    mc = sub.add_parser("mapillary-check", help="find Mapillary photos for unchecked records")
+    mc.add_argument("--limit", type=int, default=500)
+    mc.set_defaults(func=cmd_mapillary_check)
+
+    sp = sub.add_parser("strip-photos", help="forget a source's listing photo URLs")
+    sp.add_argument("--source", required=True)
+    sp.set_defaults(func=cmd_strip_photos)
 
     de = sub.add_parser("deactivate", help="bulk-remove a source (takedown)")
     de.add_argument("--source", required=True)

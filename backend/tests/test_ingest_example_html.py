@@ -43,10 +43,15 @@ def test_example_plugin_end_to_end(db, fixture_site, tmp_path):
     assert hr.area_m2 == 150.0 and hr.property_type == "house"
     assert hr.location_precision == "street"
 
-    # Nothing but facts made it into the database.
+    # The main photo is kept as a hotlink URL only (first photo; second one ignored).
+    assert pt.image_url == fixture_site.url + "/photos/ex-1001-1.jpg"
+    assert hr.image_url == fixture_site.url + "/photos/ex-2002-1.jpg"
+    assert "/photos/" not in " ".join(fixture_site.paths())  # never downloaded
+
+    # Otherwise nothing but facts made it into the database.
     dump = " ".join(str(v) for p in props.values() for v in vars(p).values())
     for forbidden in (
-        "photos/",
+        "ex-1001-2.jpg",
         "river views",
         "Maria",
         "+351",
@@ -55,6 +60,18 @@ def test_example_plugin_end_to_end(db, fixture_site, tmp_path):
         "Ivan",
     ):
         assert forbidden not in dump
+
+
+def test_photos_can_be_switched_off_per_source(db, fixture_site, tmp_path):
+    client = PoliteClient("BallparkBot/test", tmp_path, sleep=lambda s: None, jitter=lambda: 0)
+    cfg = SourceConfig(
+        key="example_html",
+        enabled=True,
+        settings={"base_url": fixture_site.url + "/", "photos": False},
+    )
+    run_source(db, ExampleHtml(), cfg, IngestDeps(client, FakeFx(), NoRaster()))
+    client.close()
+    assert {p.image_url for p in db.execute(select(Property)).scalars()} == {None}
 
 
 def test_shipped_sources_yaml():

@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import and_, exists, func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import ELIGIBLE_USD_MAX, ELIGIBLE_USD_MIN, ROUNDS_PER_GAME
@@ -49,6 +49,16 @@ class Candidate:
     city: str
     setting: str
     price_usd: float
+    has_image: bool = False
+
+
+def has_image_clause():
+    """A home with some photo: listing photo, checked Mapillary image or Street View panorama."""
+    return or_(
+        Property.image_url.is_not(None),
+        and_(Property.mly_status == "ok", Property.mly_image_id.is_not(None)),
+        and_(Property.sv_status == "ok", Property.pano_id.is_not(None)),
+    )
 
 
 def _years_ago(today: date, years: int) -> date:
@@ -65,9 +75,11 @@ def eligibility_clauses(
     blocked = exists().where(
         and_(Blocklist.source_id == Property.source_id, Blocklist.source_ref == Property.source_ref)
     )
-    return [
+    from app.core.config import get_settings
+
+    clauses = [] if get_settings().allow_imageless_rounds else [has_image_clause()]
+    return clauses + [
         Property.is_active.is_(True),
-        Property.sv_status == "ok",
         Property.country_code.in_(sorted(COUNTRY_CODES)),
         Property.location_precision.in_(("exact", "street")),
         Property.price_usd >= ELIGIBLE_USD_MIN,
@@ -101,10 +113,15 @@ def load_candidates(
         clauses.append(sc)
     rows = db.execute(
         select(
-            Property.id, Property.country_code, Property.city, Property.setting, Property.price_usd
+            Property.id,
+            Property.country_code,
+            Property.city,
+            Property.setting,
+            Property.price_usd,
+            has_image_clause(),
         ).where(*clauses)
     ).all()
-    return [Candidate(*r) for r in rows]
+    return [Candidate(*r[:5], has_image=bool(r[5])) for r in rows]
 
 
 def eligible_counts(db: Session, *, today: date, max_age_years: int) -> dict[str, dict[str, int]]:
@@ -249,7 +266,8 @@ def _attempt(
             options = [c for c in cands if ok(c)]
         if not options:
             return None
-        c = rng.choice(options)
+        # Prefer homes that have a photo; imageless ones are filler when nothing else fits.
+        c = rng.choice([o for o in options if o.has_image] or options)
         picks.append(c)
         used_ids.add(c.id)
         used_cities.add((c.country_code, c.city))

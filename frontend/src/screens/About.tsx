@@ -79,8 +79,9 @@ export function About({ meta }: { meta: Meta | null }) {
         <p>
           Prices are either <strong>recorded sale prices</strong> from official open data or{' '}
           <strong>asking prices</strong> from public listings. The reveal screen says which. We keep
-          facts only (price, size, rooms, rough location) and always link back to the source. We
-          never store listing photos, descriptions or anyone's contact details.
+          facts (price, size, rooms, rough location) and always link back to the source. Listing
+          photos are shown straight from the listing site and credited to it; we never copy them.
+          We never keep descriptions or anyone's contact details.
         </p>
         <ul className="sources">
           {meta?.sources.map((s) => (
@@ -99,7 +100,10 @@ export function About({ meta }: { meta: Meta | null }) {
             </small>
           </li>
           <li>
-            Street-level imagery: Google Street View, loaded directly from Google (© Google).
+            Street-level photos:{' '}
+            <a href="https://www.mapillary.com" target="_blank" rel="noopener noreferrer">Mapillary</a>{' '}
+            contributors (CC BY-SA 4.0) and, where enabled, Google Street View (© Google). Both load
+            directly from their services.
           </li>
           <li>
             Maps: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors.

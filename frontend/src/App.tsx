@@ -212,7 +212,10 @@ export default function App() {
           submitting={busy}
           error={error}
           onGuess={guess}
-          onImageError={() => api.reportImageError(h.game_id, roundNo)}
+          onImageError={() =>
+            game.round?.image_source &&
+            api.reportImageError(h.game_id, roundNo, game.round.image_source)
+          }
           tileUrl={meta?.tile_url}
           tileAttribution={meta?.tile_attribution}
         />
@@ -285,7 +288,8 @@ export default function App() {
           . Prices may be asking prices or recorded sale prices.
         </p>
         <p>
-          Street imagery © Google · Maps © OpenStreetMap contributors ·{' '}
+          Photos: listing sources, Mapillary (CC BY-SA) or Google · Maps © OpenStreetMap
+          contributors ·{' '}
           <a href="#/about">About &amp; data</a> · <a href="#/about">Request removal</a>
         </p>
       </footer>

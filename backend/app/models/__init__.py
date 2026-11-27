@@ -72,6 +72,13 @@ class Property(Base):
     year_built: Mapped[int | None] = mapped_column(Integer)
     pano_id: Mapped[str | None] = mapped_column(String(200))
     sv_status: Mapped[str] = mapped_column(String(16), default="unchecked")
+    # Listing photo URL on the source (hotlinked at play time; image bytes are never stored)
+    image_url: Mapped[str | None] = mapped_column(String(1000))
+    # Mapillary street-level image (only the ID is stored; the photo loads from Mapillary)
+    mly_image_id: Mapped[str | None] = mapped_column(String(64))
+    mly_status: Mapped[str] = mapped_column(
+        String(16), default="unchecked", server_default="unchecked"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

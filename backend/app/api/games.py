@@ -13,6 +13,7 @@ from app.core import fx, quota
 from app.core.config import MAX_POINTS, get_settings
 from app.core.countries import COUNTRIES_BY_CODE, REGIONS_BY_KEY
 from app.core.db import get_db
+from app.core.images import round_image
 from app.core.scoring import (
     fx_hint,
     local_to_usd,
@@ -31,7 +32,6 @@ from app.core.selection import (
     load_candidates,
     pick_rounds,
 )
-from app.core.streetview_urls import ATTRIBUTION, image_for
 from app.models import Game, GameRound, Property, utcnow
 
 router = APIRouter()
@@ -88,17 +88,13 @@ def round_payload(db: Session, game: Game, r: GameRound) -> dict:
     hard = game.difficulty == "hard"
     guess_currency = p.currency if hard else "USD"
     smin, smax = slider_bounds(guess_currency, _rate_for(db, p) if hard else None)
-    s = get_settings()
-    url = image_for(
-        p.pano_id, p.lat, p.lng, api_key=s.google_maps_api_key, secret=s.google_url_signing_secret
-    )
-    if url:
-        quota.record_url(db, daily=game.mode == "daily")
+    img = round_image(db, p, daily=game.mode == "daily")
     return {
         "round_no": r.round_no,
         "rounds_total": len(game.rounds),
-        "streetview_url": url,  # None -> client shows a placeholder card
-        "attribution": ATTRIBUTION if url else None,
+        "image_url": img.url,  # None -> client shows an illustrated card
+        "image_source": img.source,
+        "attribution": img.attribution,
         "difficulty": game.difficulty,
         "guess_currency": guess_currency,
         "local_currency": p.currency,

@@ -8,7 +8,7 @@ source must pass first. The hard rules are in [GDD §12](GDD.md#12-compliance-ru
 | Key | Source | Countries | Price type | Licence / terms |
 |---|---|---|---|---|
 | `uk_price_paid` | [HM Land Registry Price Paid Data](https://www.gov.uk/government/collections/price-paid-data) | GB (England & Wales) | `sale_record` | Open Government Licence v3.0 — attribution required |
-| `example_html` | Fixture site in `backend/tests/fixtures/` (reference only, **disabled**) | PT, HR | `asking` | n/a |
+| `example_html` | Fixture site in `backend/tests/fixtures/` (reference only, **disabled**) | PT, HR | `asking` | n/a (shows how to return a photo URL) |
 | `demo` | Invented DEMO data loaded by `make seed` (not a plugin) | all 16 | both | n/a |
 
 Required attribution text is stored in each plugin's `license_note` and copied to the `sources`
@@ -34,9 +34,15 @@ the source is not added.
       only for sites that render with JavaScript *and* allow crawling, and only after discussion).
 - [ ] **Delay ≥ 2 s** per domain (`delay_seconds` in `sources.yaml`; default 5 s). Honour any
       longer `Crawl-delay`.
-- [ ] **Facts only, no images or personal data.** The plugin returns `NormalizedListing` and
-      nothing else. It does not download, link or keep photos, descriptions, agent/owner names,
-      phone numbers, emails or street addresses (the dataclass has no fields for them).
+- [ ] **Facts only, no personal data.** The plugin returns `NormalizedListing` and nothing else.
+      It never keeps descriptions, agent/owner names, phone numbers, emails or street addresses
+      (the dataclass has no fields for them).
+- [ ] **Photos as a URL only.** If the source has photos, the plugin may set `image_url` to the
+      main photo's absolute URL **on the source**. It must never download, resize or re-host the
+      image. Prefer the photo of the outside of the home, and never use one of a person. Decide
+      deliberately whether to show this source's photos at all: set `photos: false` in
+      `sources.yaml` if the site's terms forbid it or the owner prefers not to (photo use was
+      allowed by the owner on 2026-11-27, accepting the copyright risk; see GDD §12 rule 1).
 - [ ] **Coordinates from the source or an open geocoder** (Nominatim / postcodes.io), never Google.
       `location_precision` is set honestly: `exact` (building), `street`, or `district`.
 - [ ] **Link-back implemented**: `listing_url` points to the original listing or record when one
@@ -122,5 +128,13 @@ don't work around it.
 
 ## Removal requests and takedowns
 
-Removal requests and takedowns are handled by the `deactivate` / `remove` CLI commands and the
-blocklist (Phase 3). Blocklisted `(source, source_ref)` pairs are skipped before they're fetched.
+- One home: `python -m ingest remove --property-id <uuid> [--request N]` deactivates and
+  blocklists it, so it's never re-ingested.
+- A whole source: `python -m ingest deactivate --source KEY`, then `enabled: false` in
+  `sources.yaml`.
+- **Photos only** (e.g. a photographer or agency objects): `python -m ingest strip-photos
+  --source KEY` forgets every photo link from that source at once. Also set `photos: false`
+  for it in `sources.yaml` so the next run doesn't bring them back. For a single home, use
+  `remove`.
+
+Target: act within 72 hours of a request (`python -m ingest removals` lists pending ones).

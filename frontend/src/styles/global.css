@@ -344,45 +344,84 @@ main {
   gap: 1rem;
 }
 
-.sv {
+.photo {
   margin: 0;
   position: relative;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface-2);
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 4 / 3;
   max-height: 70vh;
 }
-.sv img {
+.photo img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
-.sv-attribution {
+.photo-attribution {
   position: absolute;
-  right: 0.5rem;
-  bottom: 0.4rem;
+  right: 0;
+  bottom: 0;
   font-size: 0.75rem;
   color: #fff;
-  text-shadow: 0 0 3px #000;
+  background: rgb(0 0 0 / 45%);
+  padding: 0.15rem 0.5rem;
+  border-top-left-radius: 8px;
 }
-.sv-placeholder {
+.photo-card {
   display: grid;
   place-items: center;
-  border: 2px dashed var(--border);
-}
-.sv-placeholder-inner {
-  display: grid;
-  gap: 0.3rem;
   text-align: center;
+}
+.scene-urban {
+  background: linear-gradient(180deg, #dbe7f3 0%, #eef2f6 60%, #d9d4cc 60%);
+}
+.scene-suburban {
+  background: linear-gradient(180deg, #d8ecf7 0%, #eef6ea 62%, #b9d8a5 62%);
+}
+.scene-rural {
+  background: linear-gradient(180deg, #fbe7c6 0%, #fdf3e1 62%, #d9c48a 62%);
+}
+@media (prefers-color-scheme: dark) {
+  .scene-urban {
+    background: linear-gradient(180deg, #1f2a36 0%, #26313c 60%, #3a342d 60%);
+  }
+  .scene-suburban {
+    background: linear-gradient(180deg, #1e2b33 0%, #24322a 62%, #2f4527 62%);
+  }
+  .scene-rural {
+    background: linear-gradient(180deg, #33281a 0%, #3a2f20 62%, #4d4226 62%);
+  }
+}
+.photo-card-inner {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.photo-card-scene {
+  font-size: clamp(3rem, 14vw, 6rem);
+  opacity: 0.55;
+}
+.photo-card-icon {
+  position: absolute;
+  bottom: -0.4em;
+  font-size: clamp(3.5rem, 16vw, 7rem);
+}
+.photo-card-caption {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0;
+  right: 0;
   color: var(--muted);
-  padding: 1rem;
+  font-weight: 600;
 }
-.sv-placeholder-icon {
-  font-size: 4rem;
+@media (max-width: 899px) {
+  .photo {
+    max-height: 50vh;
+    width: 100%;
+  }
 }
-
 .chips {
   list-style: none;
   margin: 0;
@@ -645,12 +684,6 @@ main {
     display: block;
     color: var(--muted);
     font-size: 0.8rem;
-  }
-}
-@media (max-width: 899px) {
-  .sv {
-    max-height: 50vh;
-    width: 100%;
   }
 }
 

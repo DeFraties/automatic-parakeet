@@ -126,7 +126,8 @@ def test_hrk_converts_at_fixed_rate():
     assert convert_legacy_currency(100, "EUR") == (100, "EUR")
 
 
-def test_listing_schema_has_no_room_for_images_or_pii():
+def test_listing_schema_has_no_room_for_pii():
+    assert "image_url" in LISTING_FIELDS  # a photo URL only (hotlinked), never image data
     forbidden = {
         "image",
         "images",
@@ -191,3 +192,21 @@ def test_validation_accepts_good_record():
 )
 def test_validation_rejects_outliers(kw, usd, reason):
     assert reason in validate(_listing(**kw), usd, today=date(2026, 1, 1))
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://cdn.example.com/p/1.jpg", "https://cdn.example.com/p/1.jpg"),
+        ("http://cdn.example.com/1.jpg", "http://cdn.example.com/1.jpg"),
+        ("javascript:alert(1)", None),
+        ("data:image/png;base64,AAAA", None),
+        ("/relative/1.jpg", None),
+        ("https://x.com/" + "a" * 1000, None),
+        (None, None),
+    ],
+)
+def test_clean_image_url(url, expected):
+    from ingest.pipeline import clean_image_url
+
+    assert clean_image_url(url) == expected

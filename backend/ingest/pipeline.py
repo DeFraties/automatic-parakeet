@@ -6,6 +6,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,9 +79,23 @@ def find_cross_source_duplicate(db: Session, prop: Property) -> Property | None:
     return None
 
 
+MAX_IMAGE_URL = 1000
+
+
+def clean_image_url(url: str | None) -> str | None:
+    """Keep only plain absolute http(s) URLs; anything else is dropped (the record is kept)."""
+    if not url or len(url) > MAX_IMAGE_URL:
+        return None
+    parts = urlsplit(url.strip())
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return None
+    return url.strip()
+
+
 def _apply(prop: Property, listing: NormalizedListing, *, price_usd: float, rate: float) -> None:
     moved = prop.lat is not None and (prop.lat, prop.lng) != (listing.lat, listing.lng)
     prop.listing_url = listing.listing_url
+    prop.image_url = listing.image_url
     prop.price_type = listing.price_type
     prop.price_local = listing.price_local
     prop.currency = listing.currency
@@ -98,8 +113,9 @@ def _apply(prop: Property, listing: NormalizedListing, *, price_usd: float, rate
     prop.bathrooms = listing.bathrooms
     prop.year_built = listing.year_built
     if moved or prop.sv_status is None:
-        prop.sv_status = "unchecked"  # location changed: Street View must be re-checked
-        prop.pano_id = None
+        # location changed: street-level images must be re-checked
+        prop.sv_status, prop.pano_id = "unchecked", None
+        prop.mly_status, prop.mly_image_id = "unchecked", None
 
 
 def run_source(
@@ -178,6 +194,10 @@ def run_source(
                 reasons["no_fx_rate"] += 1
                 continue
             price_usd = listing.price_local * rate
+            # Photos only when the source is configured to allow them (`photos: false` = off).
+            listing.image_url = (
+                clean_image_url(listing.image_url) if cfg.settings.get("photos", True) else None
+            )
 
             problems = validate(listing, price_usd)
             if problems:

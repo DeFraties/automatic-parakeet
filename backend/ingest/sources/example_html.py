@@ -4,8 +4,9 @@ It is NOT a real source. Copy it as a starting point for a new plugin and follow
 docs/SOURCES.md. It shows the expected shape:
 
 - discover() fetches an index page through the PoliteClient and yields listing URLs
-- fetch_and_parse() extracts FACTS ONLY. The fixture page also has photos, a description and an
-  agent's phone number; the plugin ignores them (and NormalizedListing has nowhere to put them).
+- fetch_and_parse() extracts facts plus the URL of the main photo (hotlinked at play time, never
+  downloaded). The fixture page also has a description, an address and an agent's phone number;
+  the plugin ignores them, and NormalizedListing has nowhere to put them.
 """
 
 import logging
@@ -68,9 +69,12 @@ class ExampleHtml(SourcePlugin):
         if not price or loc is None or not a.get("data-lat") or not a.get("data-lng"):
             return None
         area = parse_area(_text(card, ".area") or "")
+        photo = card.css_first("img.photo")
+        photo_src = photo.attributes.get("src") if photo else None
         return NormalizedListing(
             source_ref=a.get("data-listing-id") or ref,
             listing_url=ref,
+            image_url=urljoin(ref, photo_src) if photo_src else None,
             price_type="asking",
             price_local=price[0],
             currency=price[1],

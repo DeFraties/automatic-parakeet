@@ -162,3 +162,31 @@ Choices made where the GDD was ambiguous (GDD §0 rule 8). Newest at the bottom 
 45. **Migration 0003 doesn't rebuild `games` on SQLite.** SQLite ignores VARCHAR lengths, and
     rebuilding a table that `game_rounds` references fails once games exist (foreign keys are
     on). The column is only widened on other databases.
+
+## Images (owner change, 2026-11-27)
+
+46. **Owner decision: listing photos allowed (GDD §12 rule 1 amended, option "B").** A plugin
+    may return the main photo's URL on the source (`image_url`). It is hotlinked: the player's
+    browser loads it from the source with the default referrer policy (we don't strip the
+    referrer to get around hotlink protection; a blocked image just falls back). Image bytes are
+    never downloaded or re-hosted. Credited as "Photo: {source}" with the link back on reveal.
+    `photos: false` per source and `ingest strip-photos --source KEY` give an immediate
+    photo-only takedown. The owner accepts the copyright risk. A listing photo's URL can identify
+    the listing (and so its price) for a determined player. That's accepted for now; proxying to
+    hide it would mean copying the image, which rule 1 still forbids.
+47. **Mapillary added; Google Street View optional.** Image order per round: listing photo →
+    Street View (only with a key) → Mapillary → illustrated card. `mapillary-check` picks a
+    non-panoramic image 3–60 m away whose camera points within 75° of the house (score =
+    metres + 0.3 × degrees off-axis), stores only its ID, and stops without marking anything on
+    an API error. Thumbnail URLs expire, so they're resolved at round time and cached in memory
+    for an hour. The Mapillary API shape is from its documentation and is covered by tests with
+    a mocked API, but hasn't been run against the live service (no token in this environment).
+48. **Homes without a photo are playable** (`ALLOW_IMAGELESS_ROUNDS=true`, default) with an
+    illustrated card themed by setting and property type. Selection prefers homes with a photo
+    and uses imageless ones as filler. With `false`, a photo is required. This replaces the
+    v1 rule "playable only if `sv_status='ok'`".
+49. **Image-error reports carry the source** and forget only that link: a listing URL is cleared
+    (the next ingest run restores it if it still works), and Google/Mapillary go back to
+    `unchecked`. The home itself is never deactivated by a report.
+50. **CSP `img-src` is now `'self' data: https:`**, because listing photos can come from any
+    HTTPS host.

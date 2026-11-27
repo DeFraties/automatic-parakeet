@@ -253,7 +253,8 @@ def google(monkeypatch, seeded):
 def test_round_has_signed_streetview_url_facing_house(client, google, seeded):
     g = client.post("/api/games", json={}, headers=H()).json()
     r = g["round"]
-    url = urlparse(r["streetview_url"])
+    assert r["image_source"] == "google"
+    url = urlparse(r["image_url"])
     q = parse_qs(url.query)
     assert url.netloc == "maps.googleapis.com" and url.path == "/maps/api/streetview"
     assert q["pano"][0].startswith("PANO-") and q["key"] == ["TESTKEY"] and "signature" in q
@@ -299,7 +300,8 @@ def test_quota_blocks_new_games_but_daily_uses_reserve(client, google, seeded):
 
 def test_no_key_means_placeholder_and_no_quota(client, seeded):
     g = client.post("/api/games", json={}, headers=H()).json()
-    assert g["round"]["streetview_url"] is None and g["round"]["attribution"] is None
+    assert g["round"]["image_url"] is None and g["round"]["attribution"] is None
+    assert g["round"]["image_source"] is None
     assert seeded.get(SvUsage, quota.utc_today()) is None
 
 
