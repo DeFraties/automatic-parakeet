@@ -9,6 +9,7 @@ Phase 2 commands:
   streetview-check [--limit N]           fill pano_id / sv_status for unchecked records
   mapillary-check [--limit N]            find a Mapillary photo for unchecked records
   strip-photos --source KEY              forget a source's listing photo URLs (photo takedown)
+  snapshot export KEY FILE | load FILE   move imported data between machines
   deactivate --source KEY                bulk-remove a source (takedown)
   removals                               list pending removal requests
   remove --property-id UUID [--request N] remove one record + blocklist it
@@ -286,6 +287,29 @@ def cmd_strip_photos(args) -> int:
     return 0
 
 
+def cmd_snapshot(args) -> int:
+    from ingest import snapshot
+
+    with SessionLocal() as db:
+        if args.action == "export":
+            if not args.source:
+                print("usage: snapshot export SOURCE_KEY FILE", file=sys.stderr)
+                return 2
+            n = snapshot.export(
+                db, args.source, args.file, notice=args.notice or "",
+                playable_only=args.playable_only,
+            )  # fmt: skip
+            print(f"Exported {n} properties from {args.source} to {args.file}")
+        else:
+            c = snapshot.load(db, args.file)
+            print(
+                f"Loaded {args.file}: {c['inserted']} new, {c['updated']} updated, "
+                f"{c['skipped_blocklisted']} blocklisted and {c['skipped_inactive']} removed "
+                f"homes skipped."
+            )
+    return 0
+
+
 def cmd_deactivate(args) -> int:
     with SessionLocal() as db:
         src = db.execute(select(Source).where(Source.key == args.source)).scalar_one_or_none()
@@ -382,6 +406,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--source", required=True)
     sp.set_defaults(func=cmd_strip_photos)
 
+    sn = sub.add_parser("snapshot", help="export/load a source's data as a file")
+    sn.add_argument("action", choices=["export", "load"])
+    sn.add_argument("source", nargs="?", help="source key (export only)")
+    sn.add_argument("file", nargs="?")
+    sn.add_argument("--notice", help="licence/attribution text stored in the file header")
+    sn.add_argument("--playable-only", action="store_true",
+                    help="export: skip district-precision records")  # fmt: skip
+    sn.set_defaults(func=cmd_snapshot)
+
     de = sub.add_parser("deactivate", help="bulk-remove a source (takedown)")
     de.add_argument("--source", required=True)
     de.set_defaults(func=cmd_deactivate)
@@ -399,6 +432,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if getattr(args, "cmd", None) == "snapshot" and args.action == "load" and args.file is None:
+        args.file, args.source = args.source, None  # `snapshot load FILE`
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",

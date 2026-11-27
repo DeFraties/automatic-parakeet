@@ -53,6 +53,9 @@ try region presets in development.
 
 ## Going live with real data
 
+**Quickest start:** `make load-uk` loads 1,283 real UK sales from
+[`data/snapshots/`](data/snapshots/README.md) in seconds, with no import needed.
+
 Imported homes are playable straight away. Homes without a photo show an illustrated card.
 Photos come from, in order: the listing source's own photo (hotlinked, credited) → Google Street
 View (optional) → Mapillary → the illustrated card.

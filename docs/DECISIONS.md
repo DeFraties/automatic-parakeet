@@ -190,3 +190,10 @@ Choices made where the GDD was ambiguous (GDD §0 rule 8). Newest at the bottom 
     `unchecked`. The home itself is never deactivated by a report.
 50. **CSP `img-src` is now `'self' data: https:`**, because listing photos can come from any
     HTTPS host.
+51. **Data snapshots** (`ingest snapshot export|load`, `make load-uk`): one machine does the
+    slow import, others load the result. The owner chose to commit the UK snapshot to the
+    **public** repository (2026-11-27), knowing it publishes exact coordinates and sale prices
+    of real homes. Only building/street-precision records are included (`--playable-only`), and
+    no addresses or postcodes (the schema has none). Loading never re-activates a removed home
+    and skips blocklisted ones. Attribution is in `data/snapshots/README.md`. Because the
+    coordinates derive from OpenStreetMap/Nominatim, the file is shared under ODbL terms.
