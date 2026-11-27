@@ -57,13 +57,17 @@ try region presets in development.
 **Quickest start:** `make load-uk` loads 1,283 real UK sales from
 [`data/snapshots/`](data/snapshots/README.md) in seconds, with no import needed.
 
-Imported homes are playable straight away. Homes without a photo show an illustrated card.
-Photos come from, in order: the listing source's own photo (hotlinked, credited) → Google Street
-View (optional) → Mapillary → the illustrated card.
+**Only homes with a photo are played** once a photo source is configured. Photos come from, in
+order: the listing source's own photo (hotlinked, credited) → Google Street View (optional) →
+Mapillary. With `MAPILLARY_TOKEN` set, the server finds photos in the background while it runs
+(about 5 homes per second, with progress on the Home screen), so new homes appear in games
+automatically. Without any photo source, homes show an illustrated card instead
+(`ALLOW_IMAGELESS_ROUNDS=true` keeps that behaviour even with a source).
 
 1. **Free photos via Mapillary** (recommended): create a free account and an app at
    https://www.mapillary.com/dashboard/developers, put its client token in `.env` as
-   `MAPILLARY_TOKEN`, then `make ingest ARGS="mapillary-check --limit 2000"`.
+   `MAPILLARY_TOKEN`, then restart `make dev`. Photos are found in the background
+   (`make ingest ARGS="mapillary-check --limit 2000"` does the same in bulk).
 2. **Optional: Google Street View** (paid beyond the free tier): in Google Cloud Console enable
    the **Street View Static API**, create a key restricted to it plus a **URL signing secret**,
    set `GOOGLE_MAPS_API_KEY` / `GOOGLE_URL_SIGNING_SECRET`, then

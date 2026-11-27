@@ -177,10 +177,17 @@ export function Home({
         </p>
       )}
 
-      {meta && !worldOk && (
+      {meta && meta.photos_required && meta.photo_check_pending > 0 && (
+        <p className="banner" role="status">
+          📷 Finding street photos: {formatNumber(meta.photo_check_pending)} homes left to check.
+          Only homes with a photo are played, so more appear as photos are found. Reload in a minute.
+        </p>
+      )}
+
+      {meta && !worldOk && meta.photo_check_pending === 0 && (
         <p className="banner">
           Not enough playable homes for these settings yet. Try turning on more neighbourhood types,
-          or run <code>make seed</code> to load demo data.
+          or load homes with <code>make load-uk</code>.
         </p>
       )}
     </main>

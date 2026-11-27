@@ -11,6 +11,8 @@ from app.core.config import ROUNDS_PER_GAME, get_settings
 from app.core.countries import COUNTRIES, REGIONS, countries_in_region
 from app.core.daily import daily_number
 from app.core.db import get_db
+from app.core.images import imageless_allowed, photo_sources
+from app.core.photo_checker import pending_count
 from app.core.selection import ALL_SETTINGS, DEFAULT_SETTINGS, eligible_counts
 from app.models import Source
 
@@ -81,7 +83,9 @@ def meta(db: Session = Depends(get_db)) -> dict:
         "tile_url": s.tile_url,
         "tile_attribution": s.tile_attribution,
         "streetview_enabled": quota.google_enabled(),
-        "photo_sources": {"mapillary": bool(s.mapillary_token), "google": quota.google_enabled()},
+        "photo_sources": photo_sources(),
+        "photos_required": not imageless_allowed(),
+        "photo_check_pending": pending_count(db) if s.mapillary_token else 0,
         "min_pool_per_option": mp,
         "rounds_per_game": ROUNDS_PER_GAME,
         "public_base_url": s.public_base_url,

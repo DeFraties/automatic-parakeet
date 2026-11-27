@@ -75,9 +75,9 @@ def eligibility_clauses(
     blocked = exists().where(
         and_(Blocklist.source_id == Property.source_id, Blocklist.source_ref == Property.source_ref)
     )
-    from app.core.config import get_settings
+    from app.core.images import imageless_allowed
 
-    clauses = [] if get_settings().allow_imageless_rounds else [has_image_clause()]
+    clauses = [] if imageless_allowed() else [has_image_clause()]
     return clauses + [
         Property.is_active.is_(True),
         Property.country_code.in_(sorted(COUNTRY_CODES)),

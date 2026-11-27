@@ -21,6 +21,17 @@ PRECISE = ("exact", "street")
 log = logging.getLogger(__name__)
 
 
+def photo_sources() -> dict[str, bool]:
+    s = get_settings()
+    return {"mapillary": bool(s.mapillary_token), "google": quota.google_enabled()}
+
+
+def imageless_allowed() -> bool:
+    """Homes without a photo are playable if the owner allows it, or if no photo source is
+    configured at all (otherwise nothing would be playable)."""
+    return get_settings().allow_imageless_rounds or not any(photo_sources().values())
+
+
 @dataclass(frozen=True)
 class RoundImage:
     url: str | None

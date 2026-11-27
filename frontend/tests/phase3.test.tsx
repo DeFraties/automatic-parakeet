@@ -251,3 +251,14 @@ describe('photo source hint', () => {
     expect(screen.queryByText(/No photo source is set up/)).not.toBeInTheDocument();
   });
 });
+
+describe('photo check progress', () => {
+  it('shows how many homes are still being checked', async () => {
+    stubFetch((url) => {
+      if (url === '/api/meta') return { ...makeMeta(), photo_check_pending: 1234 };
+      if (url === '/api/daily') return notPlayed;
+    });
+    render(<App />);
+    expect(await screen.findByText(/1,234 homes left to check/)).toBeInTheDocument();
+  });
+});

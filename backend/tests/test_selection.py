@@ -170,6 +170,7 @@ def test_eligibility_requires_an_image_when_imageless_disabled(db, monkeypatch):
     from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "allow_imageless_rounds", False)
+    monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|t")  # a photo source exists
     ids = _make_db_pool(db)
     p = {k: db.get(Property, v) for k, v in ids.items()}
     p["good"].pano_id = "PANO"  # sv ok + pano

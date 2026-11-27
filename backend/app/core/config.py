@@ -51,8 +51,13 @@ class Settings(BaseSettings):
 
     # Images (Section 7). Mapillary client token: https://www.mapillary.com/dashboard/developers
     mapillary_token: str = ""
-    # Play homes with no photo at all (an illustrated card is shown instead)
-    allow_imageless_rounds: bool = True
+    # Play homes with no photo (an illustrated card is shown instead). Owner decision: off, so
+    # only homes with a photo appear. If NO photo source is configured at all, imageless homes
+    # are still allowed so the game stays playable (e.g. local development on demo data).
+    allow_imageless_rounds: bool = False
+    # Check unchecked homes for Mapillary photos in a background thread while the API runs.
+    background_photo_check: bool = True
+    background_photo_check_per_second: float = 5.0
 
     # Mini map tiles (Section 4.2 / 11). Swap for another provider if traffic grows.
     tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"

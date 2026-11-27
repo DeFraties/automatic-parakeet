@@ -197,3 +197,16 @@ Choices made where the GDD was ambiguous (GDD §0 rule 8). Newest at the bottom 
     no addresses or postcodes (the schema has none). Loading never re-activates a removed home
     and skips blocklisted ones. Attribution is in `data/snapshots/README.md`. Because the
     coordinates derive from OpenStreetMap/Nominatim, the file is shared under ODbL terms.
+52. **Only homes with a photo are played** (owner decision, 2026-11-27):
+    `ALLOW_IMAGELESS_ROUNDS` now defaults to `false`. Exception: if no photo source is
+    configured at all (no `MAPILLARY_TOKEN`, no Google key), imageless homes stay playable so
+    local development on demo data still works. Listing photos count as photos.
+53. **Background photo check.** With photos required, unchecked homes would never be dealt and so
+    never checked on the fly, so the API runs a background thread (when `MAPILLARY_TOKEN` is
+    set) that checks unchecked building/street-precision homes at
+    `BACKGROUND_PHOTO_CHECK_PER_SECOND` (default 5). It pauses 5 minutes on API errors and looks
+    for new homes every minute when idle. A file lock in `INGEST_CACHE_DIR` keeps it to one
+    thread across Uvicorn workers. `/api/meta` reports `photo_check_pending`, and the Home screen
+    shows progress. `ingest mapillary-check` remains for bulk runs outside the server.
+54. **Street View heading rounding bug fixed**: 359.95°+ was formatted as "360.0". Headings
+    are now wrapped after rounding.

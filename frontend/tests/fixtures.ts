@@ -44,6 +44,8 @@ export function makeMeta(selectable: string[] = ['FR', 'JP']): Meta {
     tile_attribution: '&copy; OpenStreetMap contributors',
     streetview_enabled: false,
     photo_sources: { mapillary: true, google: false },
+    photos_required: true,
+    photo_check_pending: 0,
     quota: { games_available: true, daily_available: true },
   };
 }

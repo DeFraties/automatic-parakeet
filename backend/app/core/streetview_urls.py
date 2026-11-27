@@ -42,7 +42,7 @@ def sign_url(url: str, secret_b64: str) -> str:
 def build_streetview_url(pano_id: str, heading: float | None, api_key: str, secret_b64: str) -> str:
     params: dict = {"size": "640x640", "pano": pano_id}
     if heading is not None:
-        params["heading"] = f"{heading:.1f}"
+        params["heading"] = f"{round(heading, 1) % 360:.1f}"  # 359.97 -> 0.0, not 360.0
     params.update({"pitch": 5, "fov": 80, "key": api_key})
     return sign_url(f"{STREETVIEW_BASE}?{urlencode(params)}", secret_b64)
 

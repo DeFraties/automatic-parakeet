@@ -7,6 +7,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TMP / 'test.db'}"
 os.environ["RATE_LIMIT_GAMES_PER_HOUR"] = "0"
 os.environ["RATE_LIMIT_GUESSES_PER_HOUR"] = "0"
 os.environ["MIN_POOL_PER_OPTION"] = "50"
+os.environ["BACKGROUND_PHOTO_CHECK"] = "false"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

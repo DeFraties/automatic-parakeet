@@ -191,7 +191,9 @@ def test_district_homes_not_looked_up(seeded, monkeypatch):
 
 
 def test_game_rounds_get_mapillary_photos_without_running_the_check(client, seeded, monkeypatch):
+    # With illustrations allowed, unchecked homes can be dealt and get checked on the fly.
     monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|t")
+    monkeypatch.setattr(get_settings(), "allow_imageless_rounds", True)
 
     def images_near(request):
         w, s, e, n = map(float, request.url.params["bbox"].split(","))

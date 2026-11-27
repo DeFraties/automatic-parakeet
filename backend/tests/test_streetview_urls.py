@@ -32,3 +32,8 @@ def test_build_streetview_url():
     )
     assert "heading=123.5" in url and "pitch=5" in url and "fov=80" in url
     assert "&signature=" in url
+
+
+def test_heading_rounding_wraps_to_zero():
+    url = build_streetview_url("P", 359.97, "KEY", "vNIXE0xscrmjlyV-12Nj_BvUPaw=")
+    assert "heading=0.0" in url
