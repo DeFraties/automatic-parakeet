@@ -140,3 +140,12 @@ def test_errors_never_include_the_address(tmp_path):
     with pytest.raises(GeocodeError) as e:
         g.nominatim(street="12 Private Lane", city="Leeds", postalcode="ZZ1 1AA", country_code="GB")
     assert "Private" not in str(e.value) and "ZZ1" not in str(e.value)
+
+
+def test_block_message_names_the_service_not_the_address(tmp_path):
+    g, _, _ = make(tmp_path, lambda r: httpx.Response(403))
+    with pytest.raises(SourceBlocked) as e:
+        g.nominatim(street="12 Private Lane", city="Leeds", postalcode="ZZ1 1AA", country_code="GB")
+    msg = str(e.value)
+    assert "nominatim.openstreetmap.org" in msg and "SCRAPER_USER_AGENT" in msg
+    assert "Private" not in msg and "ZZ1" not in msg

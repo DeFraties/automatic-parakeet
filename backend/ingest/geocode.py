@@ -87,7 +87,13 @@ class Geocoder:
         self.requests_made += 1
         resp = self._http.get(url, params=params)
         if resp.status_code in (403, 429):
-            raise SourceBlocked(f"geocoder refused the request (HTTP {resp.status_code})")
+            host = urlsplit(url).netloc  # host only: the full URL contains the address
+            hint = (
+                " Set SCRAPER_USER_AGENT in .env to identify you (with a real contact email)."
+                if resp.status_code == 403
+                else ""
+            )
+            raise SourceBlocked(f"{host} refused the request (HTTP {resp.status_code}).{hint}")
         if resp.status_code == 404:
             return None
         if not 200 <= resp.status_code < 300:
