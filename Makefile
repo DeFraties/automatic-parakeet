@@ -5,7 +5,7 @@ PY      := $(VENV)/bin/python
 ALEMBIC := $(VENV)/bin/alembic -c backend/alembic.ini
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 
-.PHONY: help install dev api web test test-backend test-frontend e2e lint format build \
+.PHONY: help install dev stop api web test test-backend test-frontend e2e lint format build \
         migrate seed load-uk ingest up down logs clean
 
 help:
@@ -26,7 +26,14 @@ frontend/node_modules/.installed: frontend/package.json
 
 install: $(VENV)/.installed frontend/node_modules/.installed .env ## Install backend + frontend deps
 
-dev: install migrate ## API on :8000 (reload) + Vite on :5173
+DEV_PROCS := [u]vicorn app.main:app|[v]ite --port 5173
+
+stop: ## Stop leftover dev servers (e.g. after a Codespace reload)
+	@pkill -f "$(DEV_PROCS)" || true
+	@for i in $$(seq 1 50); do pgrep -f "$(DEV_PROCS)" >/dev/null || exit 0; sleep 0.1; done; \
+	  pkill -9 -f "$(DEV_PROCS)" || true; sleep 0.5
+
+dev: install migrate stop ## API on :8000 (reload) + Vite on :5173
 	@trap 'kill 0' INT TERM EXIT; \
 	$(VENV)/bin/uvicorn app.main:app --reload --reload-dir backend/app --port 8000 & \
 	(cd frontend && npx vite --port 5173) & \

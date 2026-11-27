@@ -42,7 +42,8 @@ try region presets in development.
 
 | Target | What it does |
 |---|---|
-| `make dev` | API with reload (:8000) + Vite with `/api` proxy (:5173) |
+| `make dev` | API with reload (:8000) + Vite with `/api` proxy (:5173); stops leftover copies first |
+| `make stop` | Stop dev servers left running (e.g. after a Codespace reload) |
 | `make test` | Backend pytest + frontend type-check and Vitest |
 | `make e2e` | Playwright smoke test (starts its own servers and a throwaway DB) |
 | `make lint` | Ruff + TypeScript |
