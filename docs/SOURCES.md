@@ -1,8 +1,9 @@
 # Listing sources
 
 All property data (price, facts, location and photos) comes from **listing sites the owner
-chooses**, one at a time (GDD Phase 5). This guide has the compliance checklist every source must
-pass before it's enabled, and a walkthrough of the example plugin to copy.
+chooses**, one at a time (GDD Phase 5). This guide has the technical checklist every source must
+pass before it's enabled (GDD §12.9), and a walkthrough of the example plugin to copy. Site
+terms of service are out of scope for this project (GDD rule 0.3).
 
 The hard rules are in [GDD §12](GDD.md#12-compliance-rules-hard-requirements). In short:
 photos are **hotlinked only**, shown exactly as published, always credited and linked back; no
@@ -20,9 +21,10 @@ protection; no Google and no geocoding.
 
 Copy this into the plugin's pull request. If any box can't be ticked, the source isn't added.
 
-- [ ] **The owner has read the site's terms of use and robots.txt**, and robots.txt allows the
-      listing pages, the search/discovery pages **and the image paths** on its image hosts for
-      the `BallparkBot` User-Agent.
+- [ ] **robots.txt allows the listing pages, the search/discovery pages and the image paths** on
+      the site's image hosts for the `BallparkBot` User-Agent (check with
+      `python -m ingest robots-check <url> …`, which uses the same rules as the importer,
+      including `*` and `$` wildcards).
 - [ ] **Works logged out**, with no challenge pages (Cloudflare, CAPTCHA). If the site
       challenges us, the plugin stops (`SourceBlocked`) and we don't work around it.
 - [ ] **Delay ≥ 5 s for pages** (`delay_seconds`), ≥ 1 s for image checks

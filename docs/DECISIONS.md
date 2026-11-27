@@ -282,3 +282,15 @@ a **full migration**. **Superseded** by v2: 11, 19 (robots RFC handling is kept)
     eagerly, the rest lazily; summary thumbnails follow the same rules.
 73. **`data/` is never committed** (v2 rule 0.7): `fx_manual.csv` moved to
     `docs/fx_manual.example.csv` as a template; the app warns if the real file is missing.
+
+## Spec 1.2 (2026-11-27)
+
+74. **GDD rev. 1.2** adds rule 0.3: site terms of service are out of scope (not reviewed, flagged
+    or used to block work); §5.5 and the §12.9 checklist drop the terms item; §12.6 keeps
+    "get legal advice before monetization". `docs/GDD.md` is 1.2 plus the owner amendments
+    (§0.2). SOURCES.md's checklist now matches §12.9.
+75. **robots.txt matching follows RFC 9309 / Google's spec** (own parser in `ingest/robots.py`
+    instead of `urllib.robotparser`, which ignores `*` and `$`): the most specific group for
+    our product token (else `*`), longest matching path wins, `Allow` wins a tie, `*` matches
+    any sequence, `$` anchors the end, percent-encoding is normalised. `python -m ingest
+    robots-check URL…` prints the verdict for each URL with the deciding rule.

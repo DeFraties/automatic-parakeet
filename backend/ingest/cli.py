@@ -386,6 +386,18 @@ def cmd_csp(args) -> int:
     return 0
 
 
+def cmd_robots_check(args) -> int:
+    """Uses exactly the importer's robots logic (and its User-Agent) on each URL."""
+    client = _client(delay=args.delay)
+    try:
+        for url in args.urls:
+            ok, why = client.robots.explain(url)
+            print(f"{'ALLOWED   ' if ok else 'DISALLOWED'}  {url}\n            {why}")
+    finally:
+        client.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m ingest", description="Ballpark data ingestion")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -441,6 +453,11 @@ def build_parser() -> argparse.ArgumentParser:
     rr.add_argument("--property-id", required=True)
     rr.add_argument("--request", type=int, help="mark this removal request as done")
     rr.set_defaults(func=cmd_remove)
+
+    rb = sub.add_parser("robots-check", help="check URLs against robots.txt as the importer would")
+    rb.add_argument("urls", nargs="+")
+    rb.add_argument("--delay", type=float, default=5.0)
+    rb.set_defaults(func=cmd_robots_check)
 
     cs = sub.add_parser("csp", help="Content-Security-Policy from enabled sources' image hosts")
     cs.add_argument("--write", help="write CSP=... to this env file (for docker compose)")

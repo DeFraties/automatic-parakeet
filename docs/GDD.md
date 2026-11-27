@@ -3,8 +3,8 @@
 > **Working title:** Ballpark ("guess the price, get in the ballpark")
 > **Type:** Browser game, self-hosted
 > **One-liner:** Players see a real property listing somewhere in the world (its listing photos + a few facts) and guess what it's listed or sold for. Closer guesses score more.
-> **Spec version:** 2.0 (26 Nov 2026), with owner amendments (27 Nov 2026). See Section 0.1 for
-> what changed from version 1, and 0.2 for the owner's amendments.
+> **Spec version:** 2.0 rev. 1.2 (26 Nov 2026), with owner amendments (27 Nov 2026). See Section
+> 0.1 for what changed from version 1, and 0.2 for the owner's amendments.
 
 ---
 
@@ -14,13 +14,14 @@ You are building this project from scratch. Follow these rules:
 
 1. **Build in the phases in Section 14, in order.** Each phase lists the sections to read first. Finish each phase, make sure its acceptance criteria pass, and commit before starting the next.
 2. **Treat Section 12 (Compliance Rules) as hard requirements.** They are not optional polish. If a feature would violate one, stop and ask.
-3. **Do not invent scraping targets.** The scraper framework ships with a documented *example* source plugin that parses a local fixture HTML file. The owner chooses the real listing sites and adds plugins one at a time (Phase 5).
-4. **Never write code that bypasses CAPTCHAs, Cloudflare/bot challenges, logins, paywalls, or hotlink protection.** If a source blocks requests or images, log it and stop or skip.
-5. Prefer boring, well-documented libraries. Keep dependencies minimal. Use Python 3.12 and Node 22 LTS.
-6. Write tests as you go (Section 13). `make test` must pass at the end of every phase.
-7. Keep secrets in `.env` only. Never commit `.env` or anything under `data/`. Provide `.env.example`.
-8. When something in this spec is ambiguous, choose the simplest option that satisfies it, and note the decision in `docs/DECISIONS.md`.
-9. **Some steps need the owner** (choosing source sites, buying a domain, downloading the GHSL file). Stop and ask at those points instead of building around them.
+3. **Site terms of service are out of scope.** Don't review, warn about, or refuse work based on a listing site's terms. The technical rules in Section 12 still apply.
+4. **Do not invent scraping targets.** The scraper framework ships with a documented *example* source plugin that parses a local fixture HTML file. The owner chooses the real listing sites and adds plugins one at a time (Phase 5).
+5. **Never write code that bypasses CAPTCHAs, Cloudflare/bot challenges, logins, paywalls, or hotlink protection.** If a source blocks requests or images, log it and stop or skip.
+6. Prefer boring, well-documented libraries. Keep dependencies minimal. Use Python 3.12 and Node 22 LTS.
+7. Write tests as you go (Section 13). `make test` must pass at the end of every phase.
+8. Keep secrets in `.env` only. Never commit `.env` or anything under `data/`. Provide `.env.example`.
+9. When something in this spec is ambiguous, choose the simplest option that satisfies it, and note the decision in `docs/DECISIONS.md`.
+10. **Some steps need the owner** (choosing source sites, buying a domain, downloading the GHSL file). Stop and ask at those points instead of building around them.
 
 ### 0.1 Direction change (version 2, 26 Nov 2026)
 
@@ -339,7 +340,7 @@ When picking rounds for Classic/Daily:
 
 ### 5.5 Launch countries & currencies
 
-All property data comes from listing sites the owner chooses. The owner must check each site's terms and robots.txt before enabling it (Section 12.9).
+All property data comes from listing sites the owner chooses. Site terms of service are out of scope for this project: don't check them, flag them, or block on them. Before a source is enabled it only has to pass the technical checklist in 12.9.
 
 | Country | ISO | Currency | In ECB/Frankfurter FX? | Notes |
 |---|---|---|---|---|
@@ -727,11 +728,11 @@ No API keys are required to run the game.
 3. **Credit and link back.** "Photos: {source}" is visible whenever photos are shown, and every reveal has a "See original listing" link.
 4. **No personal data.** Never store agent/owner/photographer names, phone numbers, emails, free-text descriptions, or exact street addresses (enforced by the `NormalizedListing` schema).
 5. **Fast removal.** Public removal form, `photo_reports`, CLI commands to remove a record or a whole source, and a blocklist so removed items never return. Act within 72 hours. Removing a property deletes its photo URLs too.
-6. **Non-commercial at launch:** no ads, payments, or paid features. If monetization is ever considered, revisit every source's terms and get legal advice first.
+6. **Non-commercial at launch:** no ads, payments, or paid features. If monetization is ever considered, get legal advice first.
 7. **Polite scraping:** robots.txt respected (pages and image hosts), per-domain delays, honest User-Agent, logged out, page caching, and stop on block. **No circumvention of any kind**, including hotlink protection.
 8. **No Google and no geocoding.** No Google Maps Platform APIs or content, and no geocoding services. Coordinates come only from the listing.
 9. `docs/SOURCES.md` must contain a checklist that every new source plugin has to pass before it's enabled:
-   - The owner has read the site's terms and robots.txt, and robots.txt allows the listing and image paths
+   - robots.txt allows the listing and image paths
    - Works logged out, with no challenge pages
    - Delay ≥ 5 s for pages
    - Only schema fields extracted (facts + photo URLs + listing's own coordinates)
