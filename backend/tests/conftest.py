@@ -96,7 +96,15 @@ class _Server:
                         return self._send(200, f.read_text(encoding="utf-8"), {})
                 return self._send(404, "not found", {})
 
+            def do_HEAD(self):  # noqa: N802
+                self._head_only = True
+                try:
+                    self.do_GET()
+                finally:
+                    self._head_only = False
+
             def _send(self, status, body, headers):
+                headers = dict(headers)  # don't mutate the stored route
                 data = body.encode()
                 self.send_response(status)
                 self.send_header("Content-Type", headers.pop("Content-Type", "text/html"))
@@ -104,7 +112,8 @@ class _Server:
                     self.send_header(k, v)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
-                self.wfile.write(data)
+                if not getattr(self, "_head_only", False):
+                    self.wfile.write(data)
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"

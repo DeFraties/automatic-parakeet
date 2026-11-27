@@ -210,3 +210,75 @@ Choices made where the GDD was ambiguous (GDD §0 rule 8). Newest at the bottom 
     shows progress. `ingest mapillary-check` remains for bulk runs outside the server.
 54. **Street View heading rounding bug fixed**: 359.95°+ was formatted as "360.0". Headings
     are now wrapped after rounding.
+
+## Spec v2 migration (2026-11-27)
+
+The owner adopted GDD v2 (listing sites only, listing photos, no Google, no geocoding) and chose
+a **full migration**. **Superseded** by v2: 11, 19 (robots RFC handling is kept), 22–24, 32
+(Street View / UK Price Paid / geocoding parts), 34–35, 37–40, 46–53, plus the UK snapshot.
+
+55. **Removed**: Google Street View (URLs, signing, metadata, quota, `sv_usage`), Mapillary and
+    the background photo checker, Nominatim/postcodes.io geocoding, the UK Land Registry
+    importer, the snapshot tool and the committed UK snapshot (it remains in git history; the
+    repository is public, so the owner may want to rewrite history if that matters). Old
+    migrations are untouched; **0005** drops the columns/table and turns the UK source off
+    (`is_active=false`, `enabled=false`) instead of deleting its rows, since past games
+    reference them. Suburban → urban in properties, games and leaderboard entries.
+56. **SQLite migrations run with foreign keys off** (alembic `env.py` uses a plain engine):
+    batch table rebuilds (needed to make `lat`/`lng` nullable) fail with FKs on once other
+    tables reference the rebuilt table. Integrity is checked in a test that upgrades a
+    database with played games.
+57. **Neighbourhoods**: two categories, `urban` (GHS-SMOD 21–30) and `rural` (11–13);
+    `unknown` (no coordinates, water, no data) is never played, so listings need coordinates
+    to be playable. The v2 adjustment rule "large house in a dense cluster → suburban" became
+    a no-op and was removed; the apartment-in-urban-centre rule stays in `adjust_setting`.
+58. **Photo order**: listing order, with labelled floor plans moved to the end (owner
+    decision). `MAX_PHOTOS_STORED=10` kept, `MAX_PHOTOS_PER_ROUND=6` shown. Alt text:
+    "Listing photo 2 of 6, property in Lyon, France" / "Floor plan 6 of 6, …".
+59. **Playable** = active, `images_status='ok'` **and** ≥ 2 photos with `status='ok'`
+    (`MIN_OK_PHOTOS`), `listing_url` present, no open `price_visible` report, plus the
+    existing price/age/country/blocklist/setting rules. `MAX_PRICE_AGE_YEARS` default is now 2.
+60. **≤ 3 rounds per source** is enforced only when the pool has enough sources to make it
+    possible (sources × 3 ≥ 5); otherwise every attempt would fail before relaxing.
+61. **Image checks** (`PoliteClient.check_image`): robots.txt on the image host, ≥ 1 s per image
+    host (pages stay ≥ 5 s per SOURCES.md; the global floor is now 1 s), `HEAD`, falling back
+    to a streamed `GET` whose body is never read when `HEAD` returns 405/501. OK = 200 +
+    `image/*`. Image responses are never cached. 403/429 stops that source's checks. An
+    unreachable image host can't serve robots.txt → disallow-all → the photo is `broken`.
+62. **Demo seed**: 11 original SVG illustrations in `frontend/public/demo-photos/` (exteriors per
+    type/setting, three rooms, a floor plan), each marked "DEMO"; 3–5 per home, served by our own
+    site (`/demo-photos/...`), skipped by URL verification. Every demo home links to
+    `https://example.com/demo/<ref>`.
+63. **Asking prices keep the first-scraped date** while the price is unchanged; a new price
+    gets a new date (so `MAX_PRICE_AGE_YEARS` measures how old the asking price is).
+64. **Price ranges** ("€300,000 – €350,000", "€1.5m - €2m") are skipped unless the source sets
+    `allow_price_range_midpoint: true`. 萬/亿 units added. "Price on request", "POA",
+    "Auction" have no number and are skipped.
+65. **Rentals**: plugins set `NormalizedListing.is_rental`; additionally a per-country floor on
+    price per m² (`min_sale_ppm2_usd` in `countries.py`, default $100/m²) flags likely monthly
+    rents (`looks_like_rent`). Deliberately low; tune per country.
+66. **Cross-source duplicates** (≤ 15 m, ≤ 2% price): the newly ingested copy is set
+    `is_active=false` ("keep only one in the pool"), and the pair is recorded on the run.
+67. **Refresh job**: re-fetches listings not seen for `--older-than-days` (default 14) with the
+    page cache bypassed; 404/410 or a plugin `None` → inactive; live → `last_seen_at`, photos
+    re-synced and re-verified. Asking listings gone 30+ days (by `last_seen_at`) lose their photo
+    URLs and are deleted, unless a past game references them (then kept as an inactive stub).
+68. **Daily Challenge**: prefers homes whose photos were verified in the last 48 h when the
+    fresh pool can make a game, and re-verifies the 5 picks right before saving (replacing up to
+    10 failures). The API wires `ingest.images.daily_photo_verifier` in at startup.
+69. **Photo reports** (`POST /api/reports`, reasons `price_visible`/`broken`/`person`/`other`,
+    only for rounds the device was shown). Only an open `price_visible` report removes the home
+    from play. `ingest reports --resolve ID --action dismiss|drop-photo|remove`.
+70. **Image-error telemetry** takes `positions[]`; the client batches failures per round
+    (1.5 s debounce, flushed when the round ends). Those photos become `broken`; with < 2 left
+    the home is `images_status='broken'` until `images-check`/`refresh` finds them working.
+71. **CSP from `image_hosts`**: `python -m ingest csp --write deploy/csp.env` (run by `make up`)
+    builds `img-src 'self'` + every enabled source's `image_hosts` + the OSM tile host. Caddy
+    reads it as `{$CSP}`. Photo URLs on other hosts are rejected at ingestion (HTTPS only), so
+    the CSP and the data agree. The favicon moved to `/favicon.svg` (no `data:` URIs).
+72. **Carousel**: native scroll-snap for swiping; arrows, dots and the full-screen button sit
+    **below** the photo so nothing overlays it (rule 12.2); ←/→ when focused; `object-fit:
+    contain` on a dark neutral background; no `referrerpolicy` attribute; the first photo loads
+    eagerly, the rest lazily; summary thumbnails follow the same rules.
+73. **`data/` is never committed** (v2 rule 0.7): `fx_manual.csv` moved to
+    `docs/fx_manual.example.csv` as a template; the app warns if the real file is missing.

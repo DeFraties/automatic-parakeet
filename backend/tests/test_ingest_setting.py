@@ -62,8 +62,8 @@ def raster(tmp_path_factory):
     [
         ((1, 1), "urban"),
         ((1, 4), "urban"),
-        ((4, 1), "suburban"),
-        ((4, 4), "suburban"),
+        ((4, 1), "urban"),
+        ((4, 4), "urban"),
         ((7, 1), "rural"),
         ((7, 4), "rural"),
         ((7, 7), "rural"),
@@ -85,20 +85,24 @@ def test_point_outside_raster_is_unknown(raster):
         assert clf.classify(35.68, 139.69) == ("unknown", None)  # Tokyo
 
 
-def test_adjustment_rule_large_house_in_dense_cluster(raster):
+def test_suburbs_count_as_urban(raster):
     path, point = raster
     with SettingClassifier(path) as clf:
-        assert clf.classify(*point(1, 4), "house", 450)[0] == "suburban"
-        assert clf.classify(*point(1, 4), "house", 350)[0] == "urban"
-        assert clf.classify(*point(1, 4), "apartment", 450)[0] == "urban"
+        assert clf.classify(*point(4, 1))[0] == "urban"  # code 22
+        assert clf.classify(*point(4, 4))[0] == "urban"  # code 21
+        assert clf.classify(*point(1, 4), "house", 450)[0] == "urban"  # big house, code 23
         assert clf.classify(*point(1, 1), "apartment", 80)[0] == "urban"
-        assert clf.classify(*point(1, 1), "house", 900)[0] == "urban"  # rule only for code 23
 
 
 def test_adjust_setting_function():
-    assert adjust_setting("urban", 23, "house", 401) == "suburban"
-    assert adjust_setting("urban", 23, "house", None) == "urban"
     assert adjust_setting("urban", 30, "apartment", 50) == "urban"
+    assert adjust_setting("rural", 13, "house", 500) == "rural"
+
+
+def test_missing_coordinates_are_unknown(raster):
+    path, _ = raster
+    with SettingClassifier(path) as clf:
+        assert clf.classify(None, None, "house", 100) == ("unknown", None)
 
 
 def test_code_mapping_matches_spec():

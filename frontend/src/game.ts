@@ -5,10 +5,10 @@ import { readStorage, writeStorage } from './storage';
 export const MODE_LABEL: Record<Mode, string> = { classic: 'Classic', daily: 'Daily' };
 export const SETTING_LABEL: Record<Setting, string> = {
   urban: 'Urban',
-  suburban: 'Suburban',
   rural: 'Rural',
 };
-export const ALL_SETTINGS: Setting[] = ['urban', 'suburban', 'rural'];
+// Owner decision: two categories. Suburbs count as urban.
+export const ALL_SETTINGS: Setting[] = ['urban', 'rural'];
 export const DEFAULT_SETTINGS: Setting[] = ['urban', 'rural'];
 export const ROUNDS = 5;
 
@@ -36,7 +36,7 @@ export function whereLabel(w: Where, meta: Meta | null): string {
   return 'World';
 }
 
-/** Canonical order for display and API: urban, suburban, rural. */
+/** Canonical order for display and API: urban, rural. */
 export function sortSettings(s: Setting[]): Setting[] {
   return ALL_SETTINGS.filter((x) => s.includes(x));
 }

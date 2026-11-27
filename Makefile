@@ -6,7 +6,7 @@ ALEMBIC := $(VENV)/bin/alembic -c backend/alembic.ini
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 
 .PHONY: help install dev stop api web test test-backend test-frontend e2e lint format build \
-        migrate seed load-uk ingest up down logs clean
+        migrate seed ingest csp up down logs clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -69,16 +69,16 @@ build: frontend/node_modules/.installed ## Production frontend build
 migrate: $(VENV)/.installed .env ## Apply DB migrations
 	$(ALEMBIC) upgrade head
 
-seed: migrate ## Load 51 DEMO properties
+seed: migrate ## Load 51 DEMO properties (with original placeholder photos)
 	$(PY) -m app.seed
 
-load-uk: migrate ## Load the pre-built UK snapshot (no slow import needed)
-	$(PY) -m ingest snapshot load data/snapshots/uk_price_paid.jsonl.gz
-
-ingest: migrate ## Run the ingest CLI: make ingest ARGS="run --source uk_price_paid"
+ingest: migrate ## Run the ingest CLI: make ingest ARGS="run --source example_html"
 	$(PY) -m ingest $(ARGS)
 
-up: .env ## Start the docker compose stack
+csp: $(VENV)/.installed ## Write deploy/csp.env (CSP img-src from enabled sources' image_hosts)
+	$(PY) -m ingest csp --write deploy/csp.env
+
+up: .env csp ## Start the docker compose stack (regenerates the CSP first)
 	$(COMPOSE) up -d --build
 
 down:

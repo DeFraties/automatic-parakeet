@@ -2,9 +2,11 @@
 
 - Honest User-Agent from config; no cookies or credentials, ever (logged-out only).
 - robots.txt checked before every path (cached 24 h). Disallowed -> RobotsDisallowed.
-- Per-domain minimum delay (default 5 s, never below 2 s; robots Crawl-delay honoured if longer)
-  plus 0–2 s random jitter, and at most one in-flight request per domain.
-- On-disk cache: pages aren't refetched within `cache_ttl_hours` (default 72).
+- Per-domain minimum delay (pages default 5 s, image checks default 1 s, never below 1 s;
+  robots Crawl-delay honoured if longer) plus 0-2 s random jitter, and at most one in-flight
+  request per domain.
+- On-disk cache for pages: not refetched within `cache_ttl_hours` (default 72). Image responses
+  are NEVER cached, downloaded or stored: `check_image` only looks at status + content type.
 - Retries: max 2, exponential backoff, only on 5xx / timeouts / connection errors.
 - 403, 429 or a CAPTCHA / bot-challenge page -> SourceBlocked. The caller must stop the source's
   run. There is no proxy rotation, header spoofing or headless-browser evasion, by design.
@@ -27,8 +29,9 @@ from ingest.robots import RobotsChecker
 
 log = logging.getLogger(__name__)
 
-MIN_DELAY_S = 2.0
+MIN_DELAY_S = 1.0
 DEFAULT_DELAY_S = 5.0
+DEFAULT_IMAGE_DELAY_S = 1.0
 MAX_JITTER_S = 2.0
 MAX_RETRIES = 2
 
@@ -122,7 +125,7 @@ class PoliteClient:
 
     # -- configuration -------------------------------------------------------------------------
     def set_delay(self, domain: str, seconds: float) -> None:
-        """Per-source delay for a domain. Never below 2 s."""
+        """Per-source delay for a domain. Never below 1 s."""
         self._delays[domain] = max(MIN_DELAY_S, seconds)
 
     def delay_for(self, domain: str) -> float:
@@ -226,6 +229,37 @@ class PoliteClient:
         if status != 200:
             raise DownloadError(f"download of {url} failed: HTTP {status}")
         return dest
+
+    def check_image(self, url: str, *, delay: float = DEFAULT_IMAGE_DELAY_S) -> bool:
+        """Does this photo URL still serve an image? HEAD (or a GET whose body is never read when
+        HEAD isn't supported). Image hosts get their own robots.txt check and delay. Nothing is
+        cached or stored. Raises SourceBlocked on 403/429 or a challenge page."""
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            return False
+        domain = parts.netloc
+        self._delays.setdefault(domain, max(MIN_DELAY_S, delay))
+        crawl_delay = self._check_robots(url)
+        with self._lock_for(domain):
+            self._wait_turn(domain, crawl_delay)
+            self.requests_made += 1
+            try:
+                resp = self._http.head(url)
+                self._last_request[domain] = self._clock()
+                if resp.status_code in (405, 501):
+                    with self._http.stream("GET", url) as streamed:  # body is never read
+                        self._last_request[domain] = self._clock()
+                        status = streamed.status_code
+                        ctype = streamed.headers.get("content-type", "")
+                else:
+                    status, ctype = resp.status_code, resp.headers.get("content-type", "")
+            except (httpx.TimeoutException, httpx.TransportError):
+                self._last_request[domain] = self._clock()
+                return False
+        if status in (403, 429):
+            log.error("BLOCKED image host %s (HTTP %s)", domain, status)
+            raise SourceBlocked(f"{domain} refused the image request (HTTP {status})")
+        return status == 200 and ctype.lower().startswith("image/")
 
     def close(self) -> None:
         self._http.close()

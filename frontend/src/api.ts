@@ -3,7 +3,7 @@ import { getDeviceId } from './deviceId';
 export type Difficulty = 'normal' | 'hard';
 export type Mode = 'classic' | 'daily';
 export type WhereScope = 'world' | 'region' | 'country';
-export type Setting = 'urban' | 'suburban' | 'rural';
+export type Setting = 'urban' | 'rural';
 
 export type Eligible = Record<Setting, number>;
 
@@ -32,7 +32,13 @@ export interface Meta {
   countries: MetaCountry[];
   regions: MetaRegion[];
   world: { eligible: Eligible; selectable: boolean };
-  sources: { key: string; display_name: string; homepage: string | null; license_note: string | null }[];
+  sources: {
+    key: string;
+    display_name: string;
+    homepage: string | null;
+    license_note: string | null;
+    image_hosts: string[];
+  }[];
   daily_number: number;
   min_pool_per_option: number;
   rounds_per_game: number;
@@ -41,11 +47,6 @@ export interface Meta {
   settings: { all: Setting[]; default: Setting[] };
   tile_url: string;
   tile_attribution: string;
-  streetview_enabled: boolean;
-  photo_sources: { mapillary: boolean; google: boolean };
-  photos_required: boolean;
-  photo_check_pending: number;
-  quota: { games_available: boolean; daily_available: boolean };
 }
 
 export interface Clues {
@@ -64,12 +65,22 @@ export interface Clues {
   price_type: 'sale_record' | 'asking';
 }
 
+export interface Photo {
+  position: number;
+  url: string;
+  width: number | null;
+  height: number | null;
+  kind: 'photo' | 'floorplan' | null;
+  alt: string;
+}
+
+export type ReportReason = 'price_visible' | 'broken' | 'person' | 'other';
+
 export interface RoundPayload {
   round_no: number;
   rounds_total: number;
-  image_url: string | null;
-  image_source: 'listing' | 'google' | 'mapillary' | null;
-  attribution: string | null;
+  photos: Photo[];
+  photo_credit: string;
   difficulty: Difficulty;
   guess_currency: string;
   local_currency: string;
@@ -104,6 +115,7 @@ export interface SummaryRow {
   city: string;
   country_code: string;
   flag: string;
+  lead_photo: string | null;
   currency: string;
   price_local: number;
   price_usd: number;
@@ -247,11 +259,16 @@ export const api = {
     ),
   requestRemoval: (body: { email: string; reference: string; message: string }) =>
     request<{ id: number; status: string }>('/removals', post(body)),
-  reportImageError: (gameId: string, roundNo: number, source: string) =>
+  reportImageError: (gameId: string, roundNo: number, positions: number[]) =>
     request<null>(
       '/telemetry/image-error',
-      post({ game_id: gameId, round_no: roundNo, source }),
+      post({ game_id: gameId, round_no: roundNo, positions }),
     ).catch(() => null),
+  reportPhoto: (gameId: string, roundNo: number, position: number | null, reason: ReportReason) =>
+    request<{ id: number; status: string }>(
+      '/reports',
+      post({ game_id: gameId, round_no: roundNo, position, reason }),
+    ),
   guess: (gameId: string, roundNo: number, amount: number, currency: string) =>
     request<GuessResponse>(`/games/${encodeURIComponent(gameId)}/rounds/${roundNo}/guess`, {
       method: 'POST',

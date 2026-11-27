@@ -10,9 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.games import DeviceId, _error
-from app.core import quota
 from app.core.config import get_settings
 from app.core.countries import COUNTRIES_BY_CODE, REGIONS_BY_KEY, where_flag
+from app.core.daily import utc_today
 from app.core.db import get_db
 from app.core.profanity import nickname_problem
 from app.core.security import client_ip, limiter
@@ -55,7 +55,7 @@ def board(
         LeaderboardEntry.mode == mode, LeaderboardEntry.difficulty == difficulty
     )
     if mode == "daily":
-        day = on or quota.utc_today()
+        day = on or utc_today()
         q = q.where(LeaderboardEntry.daily_date == day)
         filters = {"date": day.isoformat()}
     else:
@@ -73,7 +73,7 @@ def board(
         if period != "all":
             now = utcnow()
             since = (
-                datetime.combine(quota.utc_today(), datetime.min.time())
+                datetime.combine(utc_today(), datetime.min.time())
                 if period == "day"
                 else now - timedelta(days=7)
             )

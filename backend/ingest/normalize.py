@@ -40,7 +40,9 @@ _MULTIPLIERS = {
     "bn": 1e9,
     "billion": 1e9,
     "万": 1e4,
+    "萬": 1e4,
     "億": 1e8,
+    "亿": 1e8,
 }
 
 _NUM_RE = re.compile(r"\d[\d\s.,'  ]*")
@@ -91,27 +93,46 @@ def detect_currency(text: str, default: str | None = None) -> str | None:
     return default
 
 
-def parse_price(text: str, default_currency: str | None = None) -> tuple[int, str] | None:
-    """Parse a price string into (whole units, ISO currency).
+_RANGE_SEP = re.compile(
+    r"^\s*(?:thousand|millions?|billion|mio|mn|bn|[kmb万萬億亿])?\s*"
+    r"(?:-|–|—|~|to|bis|a|à|até)\s*\D{0,4}$",
+    re.IGNORECASE,
+)
+_MULT_RE = re.compile(r"(thousand|millions?|billion|mio|mn|bn|[kmb万萬億亿])(?![a-z])")
 
-    "€ 340.000" -> (340000, "EUR"); "$1.2M" -> (1200000, "USD"); "3,800万円" -> (38000000, "JPY")
+
+def _amount(m: re.Match, text: str) -> float | None:
+    """Value of the number matched by `m`, applying a following multiplier word if any."""
+    after = text[m.end() :].strip().lower()
+    word = _MULT_RE.match(after)
+    mult = _MULTIPLIERS[word.group(1)] if word else 1.0
+    # Western suffixes ("1.2m") usually carry decimals; CJK units ("3,800万") usually don't.
+    value = parse_number(m.group(0), prefer_grouping=mult in (1.0, 1e4, 1e8))
+    return value * mult if value and value > 0 else None
+
+
+def parse_price(
+    text: str, default_currency: str | None = None, *, allow_range_midpoint: bool = False
+) -> tuple[int, str] | None:
+    """Parse a price string into (whole units, ISO currency), or None to skip the listing.
+
+    "€ 340.000" -> (340000, "EUR"); "$1.2M" -> (1200000, "USD"); "3,800万円" -> (38000000, "JPY");
+    "1,280萬" with default TWD -> (12800000, "TWD"). "Price on request" -> None. Ranges such as
+    "€300,000 - €350,000" -> None, or the midpoint when `allow_range_midpoint` is set.
     """
     if not text:
         return None
     currency = detect_currency(text, default_currency)
-    m = _NUM_RE.search(text)
-    if not m or not currency:
-        return None
-    after = text[m.end() :].strip().lower()
-    mult = 1.0
-    word = re.match(r"(thousand|millions?|billion|mio|mn|bn|[kmb万億])(?![a-z])", after)
-    if word:
-        mult = _MULTIPLIERS[word.group(1)]
-    # Western suffixes ("1.2m") usually carry decimals; CJK units ("3,800万") usually don't.
-    value = parse_number(m.group(0), prefer_grouping=mult in (1.0, 1e4, 1e8))
-    if value is None or value <= 0:
-        return None
-    return int(round(value * mult)), currency
+    nums = list(_NUM_RE.finditer(text))
+    if not nums or not currency:
+        return None  # "Price on request", "POA", "Auction"...
+    if len(nums) >= 2 and _RANGE_SEP.match(text[nums[0].end() : nums[1].start()]):
+        if not allow_range_midpoint:
+            return None
+        lo, hi = _amount(nums[0], text[: nums[1].start()]), _amount(nums[1], text)
+        return (int(round((lo + hi) / 2)), currency) if lo and hi else None
+    value = _amount(nums[0], text)
+    return (int(round(value)), currency) if value else None
 
 
 _AREA_UNITS = (

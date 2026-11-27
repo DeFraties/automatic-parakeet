@@ -37,6 +37,7 @@ class Source(Base):
     display_name: Mapped[str] = mapped_column(String(200))
     homepage: Mapped[str | None] = mapped_column(String(500))
     license_note: Mapped[str | None] = mapped_column(Text)
+    image_hosts: Mapped[list | None] = mapped_column(JSON)  # hosts photo URLs may come from
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -44,14 +45,14 @@ class Property(Base):
     __tablename__ = "properties"
     __table_args__ = (
         UniqueConstraint("source_id", "source_ref", name="uq_properties_source_ref"),
-        Index("ix_properties_play", "is_active", "sv_status", "country_code", "setting"),
+        Index("ix_properties_play", "is_active", "images_status", "country_code", "setting"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"))
     source_ref: Mapped[str] = mapped_column(String(500))
-    listing_url: Mapped[str | None] = mapped_column(String(1000))
-    price_type: Mapped[str] = mapped_column(String(16))  # sale_record | asking
+    listing_url: Mapped[str | None] = mapped_column(String(1000))  # required to be playable
+    price_type: Mapped[str] = mapped_column(String(16))  # asking | sale_record
     price_local: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3))
     price_usd: Mapped[float] = mapped_column(Float)
@@ -60,30 +61,60 @@ class Property(Base):
     country_code: Mapped[str] = mapped_column(String(2))
     region: Mapped[str | None] = mapped_column(String(200))
     city: Mapped[str] = mapped_column(String(200))
-    lat: Mapped[float] = mapped_column(Float)
-    lng: Mapped[float] = mapped_column(Float)
-    location_precision: Mapped[str] = mapped_column(String(16))  # exact | street | district
-    setting: Mapped[str] = mapped_column(String(16), default="unknown")
+    # Only coordinates the listing itself provides. Never geocoded.
+    lat: Mapped[float | None] = mapped_column(Float)
+    lng: Mapped[float | None] = mapped_column(Float)
+    location_precision: Mapped[str | None] = mapped_column(String(16))  # exact | approximate
+    setting: Mapped[str] = mapped_column(String(16), default="unknown")  # urban | rural | unknown
     setting_class_raw: Mapped[int | None] = mapped_column(Integer)
     property_type: Mapped[str] = mapped_column(String(16))
     area_m2: Mapped[float | None] = mapped_column(Float)
     bedrooms: Mapped[int | None] = mapped_column(Integer)
     bathrooms: Mapped[int | None] = mapped_column(Integer)
     year_built: Mapped[int | None] = mapped_column(Integer)
-    pano_id: Mapped[str | None] = mapped_column(String(200))
-    sv_status: Mapped[str] = mapped_column(String(16), default="unchecked")
-    # Listing photo URL on the source (hotlinked at play time; image bytes are never stored)
-    image_url: Mapped[str | None] = mapped_column(String(1000))
-    # Mapillary street-level image (only the ID is stored; the photo loads from Mapillary)
-    mly_image_id: Mapped[str | None] = mapped_column(String(64))
-    mly_status: Mapped[str] = mapped_column(
+    images_status: Mapped[str] = mapped_column(
         String(16), default="unchecked", server_default="unchecked"
-    )
+    )  # unchecked | ok | broken
+    images_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     source: Mapped[Source] = relationship()
+    images: Mapped[list["PropertyImage"]] = relationship(
+        back_populates="property",
+        order_by="PropertyImage.position",
+        cascade="all, delete-orphan",
+    )
+
+
+class PropertyImage(Base):
+    """A listing photo's URL as published by the source. Never the image file itself."""
+
+    __tablename__ = "property_images"
+
+    property_id: Mapped[str] = mapped_column(ForeignKey("properties.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)  # 0 = lead photo
+    url: Mapped[str] = mapped_column(String(2000))
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    kind: Mapped[str | None] = mapped_column(String(16))  # photo | floorplan | None
+    status: Mapped[str] = mapped_column(String(16), default="ok")  # ok | broken
+
+    property: Mapped[Property] = relationship(back_populates="images")
+
+
+class PhotoReport(Base):
+    __tablename__ = "photo_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    property_id: Mapped[str] = mapped_column(ForeignKey("properties.id"))
+    position: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(16))  # price_visible | broken | person | other
+    device_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | resolved | dismissed
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class FxRate(Base):
@@ -98,7 +129,7 @@ class Game(Base):
     __tablename__ = "games"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    mode: Mapped[str] = mapped_column(String(16))  # classic | urban | suburban | daily | hl
+    mode: Mapped[str] = mapped_column(String(16))  # classic | daily | hl
     where_scope: Mapped[str] = mapped_column(String(16), default="world")
     where_value: Mapped[str | None] = mapped_column(String(32))
     setting_filter: Mapped[str] = mapped_column(String(32), default="rural,urban")
@@ -203,14 +234,6 @@ class Blocklist(Base):
 
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), primary_key=True)
     source_ref: Mapped[str] = mapped_column(String(500), primary_key=True)
-
-
-class SvUsage(Base):
-    __tablename__ = "sv_usage"
-
-    date: Mapped[date] = mapped_column(Date, primary_key=True)
-    urls_issued: Mapped[int] = mapped_column(Integer, default=0)
-    daily_reserved_used: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class IngestRun(Base):

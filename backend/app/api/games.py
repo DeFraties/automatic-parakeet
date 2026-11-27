@@ -9,11 +9,11 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import update
 from sqlalchemy.orm import Session, selectinload
 
-from app.core import fx, quota
+from app.core import fx
 from app.core.config import MAX_POINTS, get_settings
 from app.core.countries import COUNTRIES_BY_CODE, REGIONS_BY_KEY
 from app.core.db import get_db
-from app.core.images import round_image
+from app.core.photos import lead_photo_url, photo_credit, round_photos
 from app.core.scoring import (
     fx_hint,
     local_to_usd,
@@ -39,7 +39,7 @@ router = APIRouter()
 Mode = Literal["classic"]
 Difficulty = Literal["normal", "hard"]
 WhereScope = Literal["world", "region", "country"]
-Setting = Literal["urban", "suburban", "rural"]
+Setting = Literal["urban", "rural"]
 
 
 class CreateGameIn(BaseModel):
@@ -48,7 +48,7 @@ class CreateGameIn(BaseModel):
     where_value: str | None = Field(default=None, max_length=32)
     difficulty: Difficulty = "normal"
     settings: list[Setting] = Field(
-        default_factory=lambda: list(DEFAULT_SETTINGS), min_length=1, max_length=3
+        default_factory=lambda: list(DEFAULT_SETTINGS), min_length=1, max_length=2
     )
 
     @model_validator(mode="after")
@@ -88,13 +88,12 @@ def round_payload(db: Session, game: Game, r: GameRound) -> dict:
     hard = game.difficulty == "hard"
     guess_currency = p.currency if hard else "USD"
     smin, smax = slider_bounds(guess_currency, _rate_for(db, p) if hard else None)
-    img = round_image(db, p, daily=game.mode == "daily")
+    place = f"{p.city}, {country.name}"
     return {
         "round_no": r.round_no,
         "rounds_total": len(game.rounds),
-        "image_url": img.url,  # None -> client shows an illustrated card
-        "image_source": img.source,
-        "attribution": img.attribution,
+        "photos": round_photos(p, place),
+        "photo_credit": photo_credit(p),
         "difficulty": game.difficulty,
         "guess_currency": guess_currency,
         "local_currency": p.currency,
@@ -114,7 +113,12 @@ def round_payload(db: Session, game: Game, r: GameRound) -> dict:
             "price_year": p.price_date.year,
             "price_type": p.price_type,
         },
-        "map": {"lat_approx": round(p.lat, 2), "lng_approx": round(p.lng, 2)},
+        # Only when the listing itself provided coordinates. ~1 km rounding.
+        "map": (
+            {"lat_approx": round(p.lat, 2), "lng_approx": round(p.lng, 2)}
+            if p.lat is not None and p.lng is not None
+            else None
+        ),
     }
 
 
@@ -154,6 +158,7 @@ def summary_payload(game: Game) -> dict:
                 "city": p.city,
                 "country_code": p.country_code,
                 "flag": COUNTRIES_BY_CODE[p.country_code].flag,
+                "lead_photo": lead_photo_url(p),
                 "currency": p.currency,
                 "price_local": p.price_local,
                 "price_usd": round(p.price_usd),
@@ -180,7 +185,9 @@ def summary_payload(game: Game) -> dict:
 def _load_game(db: Session, game_id: str) -> Game:
     game = (
         db.query(Game)
-        .options(selectinload(Game.rounds).selectinload(GameRound.property))
+        .options(
+            selectinload(Game.rounds).selectinload(GameRound.property).selectinload(Property.images)
+        )
         .filter(Game.id == game_id)
         .one_or_none()
     )
@@ -199,14 +206,6 @@ def game_header(game: Game) -> dict:
         "settings": list(decode_settings(game.setting_filter)),
         "difficulty": game.difficulty,
     }
-
-
-def quota_error() -> HTTPException:
-    return _error(
-        503,
-        "quota_exceeded",
-        "We've hit today's limit — come back tomorrow (Daily Challenge still works).",
-    )
 
 
 def start_game(
@@ -235,6 +234,20 @@ def start_game(
     return {**game_header(game), "round": round_payload(db, game, game.rounds[0])}
 
 
+def shown_round(
+    db: Session, game_id: str, round_no: int, device_id: str | None
+) -> GameRound | None:
+    """The round if this device has been shown it (answered, or the current one), else None."""
+    game = db.get(Game, game_id)
+    if game is None or (game.device_id and game.device_id != device_id):
+        return None
+    r = db.get(GameRound, (game.id, round_no))
+    prev = db.get(GameRound, (game.id, round_no - 1)) if round_no > 1 else None
+    if r is None or not (r.score is not None or prev is None or prev.score is not None):
+        return None
+    return r
+
+
 @router.post("/games", status_code=201)
 def create_game(
     body: CreateGameIn,
@@ -244,8 +257,6 @@ def create_game(
 ) -> dict:
     s = get_settings()
     limiter.check(f"games:{client_ip(request)}", s.rate_limit_games_per_hour)
-    if not quota.can_start_game(db, daily=False):
-        raise quota_error()
     setting_filter = encode_settings(body.settings)
     cands = load_candidates(
         db,

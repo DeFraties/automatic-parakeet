@@ -9,6 +9,15 @@ for (const difficulty of ['Normal', 'Hard'] as const) {
 
     for (let n = 1; n <= 5; n++) {
       await expect(page.getByText(`Round ${n}/5`)).toBeVisible();
+      // Browse the listing photos (demo placeholders served by our own site).
+      const frame = page.getByLabel(/^Photo 1 of \d+\./);
+      await expect(frame).toBeVisible();
+      const lead = page.locator('.carousel-slide img').first();
+      await expect(lead).toHaveJSProperty('complete', true);
+      expect(await lead.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+      await page.getByRole('button', { name: 'Next photo' }).click();
+      await expect(page.getByLabel(/^Photo 2 of \d+\./)).toBeVisible();
+      await expect(page.getByText('Photos: DEMO data (fictional)')).toBeVisible();
       if (difficulty === 'Hard') {
         await expect(page.locator('main')).not.toContainText('USD');
       }
@@ -67,5 +76,5 @@ test('About page and removal form', async ({ page }) => {
   await page.getByLabel('Your email').fill('owner@example.com');
   await page.getByLabel('Listing link or property ID').fill('https://example.com/demo/demo-001');
   await page.getByRole('button', { name: 'Send removal request' }).click();
-  await expect(page.getByText(/within 72 hours/)).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('within 72 hours');
 });

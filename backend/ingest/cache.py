@@ -1,4 +1,4 @@
-"""Small on-disk SQLite caches for ingestion: HTTP responses, robots.txt and geocoding results.
+"""Small on-disk SQLite caches for ingestion: HTTP responses (pages only) and robots.txt.
 
 Geocoding keys are SHA-256 hashes of the query, so street addresses are never written to disk.
 """

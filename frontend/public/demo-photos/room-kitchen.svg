@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+<rect width="1200" height="800" fill="#f3efe7"/>
+<rect y="560" width="1200" height="240" fill="#bfb7aa"/>
+<rect x="0" y="0" width="1200" height="560" fill="#f3efe7"/><rect x="120" y="360" width="960" height="200" fill="#d7c4a8" stroke="#8b7d6b" stroke-width="6"/>
+<rect x="120" y="340" width="960" height="30" fill="#5a5048"/><rect x="150" y="120" width="160" height="150" fill="#e3d6c1" stroke="#8b7d6b" stroke-width="6"/><rect x="340" y="120" width="160" height="150" fill="#e3d6c1" stroke="#8b7d6b" stroke-width="6"/><rect x="530" y="120" width="160" height="150" fill="#e3d6c1" stroke="#8b7d6b" stroke-width="6"/><rect x="720" y="120" width="160" height="150" fill="#e3d6c1" stroke="#8b7d6b" stroke-width="6"/><rect x="910" y="120" width="160" height="150" fill="#e3d6c1" stroke="#8b7d6b" stroke-width="6"/>
+<g opacity="0.85"><rect x="24" y="24" rx="14" width="190" height="64" fill="#1f1a17"/>
+<text x="119" y="69" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#fff" text-anchor="middle">DEMO</text></g>
+<text x="1176" y="776" font-family="Arial, sans-serif" font-size="22" fill="#00000066" text-anchor="end">Ballpark demo illustration</text>
+</svg>

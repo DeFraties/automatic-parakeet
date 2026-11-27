@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+<rect width="1200" height="800" fill="#cde7f7"/>
+<rect y="560" width="1200" height="240" fill="#d8cfb6"/>
+<rect x="260" y="300" width="680" height="280" fill="#fbf7ef" stroke="#5a5048" stroke-width="6"/><rect x="250" y="285" width="700" height="24" fill="#5a5048"/>
+<rect x="300" y="350" width="260" height="140" fill="#9cc7e0" stroke="#5a5048" stroke-width="4"/><rect x="640" y="350" width="260" height="140" fill="#9cc7e0" stroke="#5a5048" stroke-width="4"/>
+<rect x="300" y="590" width="600" height="60" rx="10" fill="#5fb3d9"/>
+<g opacity="0.85"><rect x="24" y="24" rx="14" width="190" height="64" fill="#1f1a17"/>
+<text x="119" y="69" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#fff" text-anchor="middle">DEMO</text></g>
+<text x="1176" y="776" font-family="Arial, sans-serif" font-size="22" fill="#00000066" text-anchor="end">Ballpark demo illustration</text>
+</svg>

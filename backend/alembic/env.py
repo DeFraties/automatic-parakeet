@@ -1,6 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import create_engine
 
 import app.models  # noqa: F401  (registers models on Base.metadata)
 from app.core.config import get_settings
@@ -26,7 +27,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    engine = make_engine(_url())
+    # Plain engine on purpose: SQLite table rebuilds (batch mode) fail with foreign keys
+    # enforced once other tables reference the rebuilt table, so they stay off here.
+    url = _url()
+    engine = create_engine(url) if url.startswith("sqlite") else make_engine(url)
     with engine.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata, render_as_batch=True

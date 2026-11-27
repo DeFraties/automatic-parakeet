@@ -24,6 +24,9 @@ class Country:
     region: str  # Region.key
     locale: str  # default BCP-47 locale
     in_ecb_fx: bool = True  # currency covered by ECB reference rates (Frankfurter)?
+    # Rough floor for a SALE price per m² in USD. Anything below is probably a monthly rent
+    # (Section 8.5). Deliberately low; tweak per country if real sales get rejected.
+    min_sale_ppm2_usd: int = 100
 
 
 REGIONS: tuple[Region, ...] = (

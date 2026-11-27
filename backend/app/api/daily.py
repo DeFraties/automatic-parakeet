@@ -8,8 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.games import DeviceId, _error, quota_error, start_game
-from app.core import daily, quota
+from app.api.games import DeviceId, _error, start_game
+from app.core import daily
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import client_ip, limiter
@@ -25,7 +25,7 @@ class DailyStartIn(BaseModel):
 
 def _status(db: Session, device_id: str | None) -> dict:
     s = get_settings()
-    today = quota.utc_today()
+    today = daily.utc_today()
     out = {
         "date": today.isoformat(),
         "number": daily.daily_number(today, s.launch_date),
@@ -71,9 +71,7 @@ def daily_start(
         raise _error(400, "device_id_required", "Missing device ID.")
     if _status(db, device_id)["played"]:
         raise _error(409, "already_played", "You've already played today's Daily Challenge.")
-    if not quota.can_start_game(db, daily=True):
-        raise quota_error()
-    today = quota.utc_today()
+    today = daily.utc_today()
     try:
         challenge = daily.get_or_create(db, today)
     except PoolTooSmall as e:

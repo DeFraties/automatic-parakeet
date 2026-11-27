@@ -1,93 +1,177 @@
-"""Reference plugin: parses the fixture site in backend/tests/fixtures/example_site/.
+"""Reference plugin (Section 8.4): parses the FICTIONAL fixture site in backend/tests/fixtures/.
 
-It is NOT a real source. Copy it as a starting point for a new plugin and follow
-docs/SOURCES.md. It shows the expected shape:
+It is not a real source. Copy it as the starting point for a new plugin and follow
+docs/SOURCES.md. It shows every pattern a real plugin needs:
 
-- discover() fetches an index page through the PoliteClient and yields listing URLs
-- fetch_and_parse() extracts facts plus the URL of the main photo (hotlinked at play time, never
-  downloaded). The fixture page also has a description, an address and an agent's phone number;
-  the plugin ignores them, and NormalizedListing has nowhere to put them.
+- discover(): read a search-results page through the PoliteClient and yield listing URLs
+- fetch_and_parse(): prefer the site's embedded JSON, fall back to HTML selectors
+- normalize the price (skip "price on request" and ranges) and the area (m²/ft²)
+- take coordinates ONLY from the listing itself (JSON or the site's map widget)
+- collect photo URLs in the listing's order, choosing the largest size the site already
+  publishes that is <= 1600 px, and label floor plans
+- ignore everything else on the page: descriptions, agent names/phones/emails, addresses
 """
 
+import json
 import logging
+import re
 from collections.abc import Iterable
 from datetime import date
 from urllib.parse import urljoin
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
-from ingest.models import NormalizedListing
-from ingest.normalize import normalize_property_type as norm_type
-from ingest.normalize import parse_area, parse_price
+from ingest.models import NormalizedImage, NormalizedListing
+from ingest.normalize import normalize_property_type, parse_area, parse_price
 from ingest.sources.base import SourcePlugin
 
 log = logging.getLogger(__name__)
 
-
-def _text(tree: HTMLParser, selector: str) -> str | None:
-    node = tree.css_first(selector)
-    return node.text(strip=True) if node else None
+MAX_IMAGE_WIDTH = 1600
 
 
-def _int(value: str | None) -> int | None:
+def _text(node, selector: str) -> str | None:
+    found = node.css_first(selector)
+    return found.text(strip=True) if found else None
+
+
+def _int(value) -> int | None:
     try:
         return int(value) if value not in (None, "") else None
-    except ValueError:
+    except (TypeError, ValueError):
         return None
+
+
+def _float(value) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_floorplan(label: str | None) -> bool:
+    return bool(label) and bool(re.search(r"floor\s*plan|planta|grundriss", label, re.I))
 
 
 class ExampleHtml(SourcePlugin):
     key = "example_html"
-    display_name = "Example listing site (fixture)"
+    display_name = "Example Listings (fixture)"
     homepage = "http://127.0.0.1:8099/"
     price_type = "asking"
     country_codes = ["PT", "HR"]
+    image_hosts = ["images.example.test"]
     license_note = None
 
     def discover(self, client, settings: dict) -> Iterable[str]:
+        self.allow_midpoint = bool(settings.get("allow_price_range_midpoint", False))
         base = settings.get("base_url", self.homepage)
-        index = client.get(urljoin(base, settings.get("index_path", "index.html")))
-        tree = HTMLParser(index.text)
-        for a in tree.css("a.listing-link"):
+        page = client.get(urljoin(base, settings.get("search_path", "example_search.html")))
+        tree = HTMLParser(page.text)
+        for a in tree.css("a.result-link"):
             href = a.attributes.get("href")
             if href:
-                yield urljoin(index.url, href)
+                yield urljoin(page.url, href)
+
+    # -- parsing ----------------------------------------------------------------------------
+    def _price(self, text: str) -> tuple[int, str] | None:
+        return parse_price(text, allow_range_midpoint=getattr(self, "allow_midpoint", False))
 
     def fetch_and_parse(self, client, ref: str) -> NormalizedListing | None:
         page = client.get(ref)
         if page.status != 200:
             return None
         tree = HTMLParser(page.text)
+        blob = tree.css_first("script#listing-data")
+        if blob is not None:
+            try:
+                return self._from_json(json.loads(blob.text()), ref)
+            except (ValueError, KeyError, TypeError) as e:
+                log.info("embedded JSON unusable on %s (%s); falling back to HTML", ref, e)
+        return self._from_html(tree, ref)
+
+    def _from_json(self, d: dict, ref: str) -> NormalizedListing | None:
+        if d.get("status") == "for_rent":
+            return None
+        price = d.get("price") or {}
+        if price.get("amount"):
+            parsed = (int(price["amount"]), price["currency"])
+        else:
+            parsed = self._price(price.get("display", ""))
+        if not parsed:
+            return None  # no single numeric price
+        addr, geo = d.get("address") or {}, d.get("geo") or {}
+        images = [
+            NormalizedImage(
+                url=p["url"],
+                width=_int(p.get("width")),
+                height=_int(p.get("height")),
+                kind="floorplan" if _is_floorplan(p.get("label")) else "photo",
+            )
+            for p in d.get("photos", [])
+            if p.get("url") and (_int(p.get("width")) or 0) <= MAX_IMAGE_WIDTH
+        ]
+        lat, lng = _float(geo.get("lat")), _float(geo.get("lng"))
+        return NormalizedListing(
+            source_ref=str(d["id"]),
+            listing_url=ref,
+            price_type="asking",
+            price_local=parsed[0],
+            currency=parsed[1],
+            price_date=date.today(),  # asking price: the day it was (first) scraped
+            country_code=addr.get("country", ""),
+            city=addr.get("city", ""),
+            region=addr.get("region"),
+            lat=lat,
+            lng=lng,
+            location_precision=("exact" if geo.get("precision") == "exact" else "approximate")
+            if lat is not None
+            else None,
+            property_type=normalize_property_type(d.get("type")),
+            area_m2=parse_area(d.get("area", "")),
+            bedrooms=_int(d.get("bedrooms")),
+            bathrooms=_int(d.get("bathrooms")),
+            year_built=_int(d.get("yearBuilt")),
+            images=images,
+        )  # note: address.street, agent and description are deliberately ignored
+
+    def _from_html(self, tree, ref: str) -> NormalizedListing | None:
         card = tree.css_first("article.listing")
         if card is None:
             return None
-        a = card.attributes
-        price = parse_price(_text(card, ".price") or "")
+        parsed = self._price(_text(card, ".price") or "")
+        if not parsed:
+            return None  # "Price on request", auctions without a guide price, ranges
         loc = card.css_first(".locality")
-        listed = card.css_first("time.listed")
-        listed_on = date.fromisoformat(listed.attributes["datetime"]) if listed else date.today()
-        if not price or loc is None or not a.get("data-lat") or not a.get("data-lng"):
+        if loc is None:
             return None
-        area = parse_area(_text(card, ".area") or "")
-        photo = card.css_first("img.photo")
-        photo_src = photo.attributes.get("src") if photo else None
+        widget = card.css_first(".map")
+        lat = _float(widget.attributes.get("data-lat")) if widget else None
+        lng = _float(widget.attributes.get("data-lng")) if widget else None
+        approx = widget is not None and widget.attributes.get("data-approximate") == "true"
+        images = []
+        for img in card.css(".gallery img"):
+            a = img.attributes
+            url = a.get("data-src-large") or a.get("data-src")  # largest published <= 1600 px
+            if url:
+                kind = "floorplan" if a.get("data-kind") == "floorplan" else "photo"
+                images.append(NormalizedImage(url=urljoin(ref, url), kind=kind))
         return NormalizedListing(
-            source_ref=a.get("data-listing-id") or ref,
+            source_ref=card.attributes.get("data-listing-id") or ref,
             listing_url=ref,
-            image_url=urljoin(ref, photo_src) if photo_src else None,
             price_type="asking",
-            price_local=price[0],
-            currency=price[1],
-            price_date=listed_on,
-            country_code=(loc.attributes.get("data-country") or "").upper(),
+            price_local=parsed[0],
+            currency=parsed[1],
+            price_date=date.today(),
+            country_code=loc.attributes.get("data-country") or "",
             city=loc.attributes.get("data-city") or "",
             region=loc.attributes.get("data-region"),
-            lat=float(a["data-lat"]),
-            lng=float(a["data-lng"]),
-            location_precision=a.get("data-precision") or "street",
-            property_type=norm_type(_text(card, ".type")),
-            area_m2=area,
+            lat=lat,
+            lng=lng,
+            location_precision=("approximate" if approx else "exact") if lat is not None else None,
+            property_type=normalize_property_type(_text(card, ".type")),
+            area_m2=parse_area(_text(card, ".area") or ""),
             bedrooms=_int(_text(card, ".beds")),
             bathrooms=_int(_text(card, ".baths")),
             year_built=_int(_text(card, ".year")),
+            images=images,
         )

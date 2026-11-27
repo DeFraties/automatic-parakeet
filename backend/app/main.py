@@ -6,18 +6,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import daily, games, health, leaderboards, meta, removals, telemetry
+from app.api import daily, games, health, leaderboards, meta, removals, reports, telemetry
 from app.core.config import get_settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from app.core.photo_checker import start_background_checker
+    # Re-verify Daily Challenge photos with the polite image checker before saving (Section 6.3).
+    from app.core import daily
+    from ingest.images import daily_photo_verifier
 
-    checker = start_background_checker()
+    daily.photo_verifier = daily_photo_verifier
     yield
-    if checker:
-        checker.stop()
 
 
 def _setup_logging() -> None:
@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
         daily.router,
         leaderboards.router,
         removals.router,
+        reports.router,
         telemetry.router,
     ):
         app.include_router(r, prefix="/api")

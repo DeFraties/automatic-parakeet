@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+<rect width="1200" height="800" fill="#f7e3bd"/>
+<rect y="560" width="1200" height="240" fill="#c9b36b"/>
+<rect x="430" y="340" width="340" height="230" fill="#e8dcc4" stroke="#5a5048" stroke-width="6"/><polygon points="400,350 600,210 800,350" fill="#8a6a3a" stroke="#5a5048" stroke-width="6"/>
+<rect x="570" y="470" width="60" height="100" fill="#5a3e2b"/><rect x="460" y="390" width="80" height="70" fill="#fdf6c3" stroke="#5a5048" stroke-width="4"/><rect x="660" y="390" width="80" height="70" fill="#fdf6c3" stroke="#5a5048" stroke-width="4"/>
+<path d="M0 560 Q300 470 600 540 T1200 520 V560 H0Z" fill="#a9c47f"/><circle cx="1050" cy="150" r="60" fill="#f6d36b"/>
+<g opacity="0.85"><rect x="24" y="24" rx="14" width="190" height="64" fill="#1f1a17"/>
+<text x="119" y="69" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#fff" text-anchor="middle">DEMO</text></g>
+<text x="1176" y="776" font-family="Arial, sans-serif" font-size="22" fill="#00000066" text-anchor="end">Ballpark demo illustration</text>
+</svg>

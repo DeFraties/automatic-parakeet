@@ -46,3 +46,25 @@ def client_ip(request: Request) -> str:
     if fwd:
         return fwd.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+# --- Content Security Policy (Section 7.3 / 11) -----------------------------------------------
+def csp_img_hosts(image_hosts: list[str], tile_url: str) -> list[str]:
+    from urllib.parse import urlsplit
+
+    hosts = {f"https://{h}" for h in image_hosts if h}
+    tile_host = urlsplit(tile_url.replace("{s}", "a")).netloc
+    if tile_host:
+        hosts.add(f"https://{tile_host}")
+    return sorted(hosts)
+
+
+def build_csp(image_hosts: list[str], tile_url: str) -> str:
+    """CSP whose img-src allows only our own site, the enabled sources' image hosts and the map
+    tile server, so a photo URL from any other host can't load."""
+    img_src = " ".join(["'self'", *csp_img_hosts(image_hosts, tile_url)])
+    return (
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        f"img-src {img_src}; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; "
+        "base-uri 'self'; form-action 'self'"
+    )

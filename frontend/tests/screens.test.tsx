@@ -30,7 +30,7 @@ describe('Round screen', () => {
     const clues = screen.getByRole('list', { name: 'Clues' });
     expect(within(clues).getByText(/55 m² \(592 ft²\)/)).toBeInTheDocument();
     expect(within(clues).getByText(/Sold 2025/)).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /Illustration of a urban apartment/ })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Listing photo 1 of 3, property in City2, Japan' })).toBeInTheDocument();
     expect(screen.getByText('Round 2/5')).toBeInTheDocument();
   });
 });

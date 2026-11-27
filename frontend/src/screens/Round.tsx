@@ -1,8 +1,10 @@
-import type { RoundPayload } from '../api';
+import { useState } from 'react';
+import type { ReportReason, RoundPayload } from '../api';
 import { ClueChips } from '../components/ClueChips';
 import { GuessInput } from '../components/GuessInput';
 import { MiniMap } from '../components/MiniMap';
-import { PropertyImage } from '../components/PropertyImage';
+import { PhotoCarousel } from '../components/PhotoCarousel';
+import { ReportPhoto } from '../components/ReportPhoto';
 import { currencyName, currencySymbol, formatNumber } from '../format';
 
 interface Props {
@@ -12,7 +14,8 @@ interface Props {
   submitting: boolean;
   error: string | null;
   onGuess: (amount: number) => void;
-  onImageError?: () => void;
+  onPhotosFailed?: (positions: number[]) => void;
+  onReport?: (position: number | null, reason: ReportReason) => Promise<unknown>;
   tileUrl?: string;
   tileAttribution?: string;
 }
@@ -24,7 +27,8 @@ export function Round({
   submitting,
   error,
   onGuess,
-  onImageError,
+  onPhotosFailed,
+  onReport,
   tileUrl,
   tileAttribution,
 }: Props) {
@@ -32,6 +36,7 @@ export function Round({
   const hard = round.difficulty === 'hard';
   const cur = round.guess_currency;
   const helper = hard ? `${currencyName(cur)} (${currencySymbol(cur)})` : undefined;
+  const [shownPosition, setShownPosition] = useState<number | null>(null);
   return (
     <main className="round" id="main">
       <div className="topbar">
@@ -44,14 +49,21 @@ export function Round({
         </span>
       </div>
       <div className="round-layout">
-        <PropertyImage
-          url={round.image_url}
-          attribution={round.attribution}
-          setting={clues.setting}
-          propertyType={clues.property_type}
-          alt={`Photo of a property in ${clues.city}, ${clues.country}`}
-          onError={onImageError}
-        />
+        <div className="round-photos">
+          <PhotoCarousel
+            key={round.round_no}
+            photos={round.photos}
+            credit={round.photo_credit}
+            onFailed={onPhotosFailed}
+            onCurrentChange={setShownPosition}
+          />
+          {onReport && (
+            <ReportPhoto
+              key={round.round_no}
+              onReport={(reason) => onReport(shownPosition, reason)}
+            />
+          )}
+        </div>
         <div className="round-side">
           <ClueChips clues={clues} />
           <div className="card">
@@ -70,7 +82,7 @@ export function Round({
               </p>
             )}
           </div>
-          {tileUrl && (
+          {tileUrl && round.map && (
             <MiniMap
               lat={round.map.lat_approx}
               lng={round.map.lng_approx}

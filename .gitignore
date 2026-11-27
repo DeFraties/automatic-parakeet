@@ -1,8 +1,8 @@
 .env
-data/*.db
-data/*.db-*
-data/ghsl/
-data/cache/
+# Never commit anything under data/ (DB, caches, GHSL raster, fx_manual.csv)
+data/*
+!data/.gitkeep
+deploy/csp.env
 __pycache__/
 *.egg-info/
 .venv/

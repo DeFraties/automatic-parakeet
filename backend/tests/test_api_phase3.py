@@ -1,25 +1,19 @@
-import base64
 import json
 from datetime import timedelta
-from urllib.parse import parse_qs, urlparse
 
-import httpx
 import pytest
 from sqlalchemy import select
 
-from app.core import quota, streetview_urls
-from app.core.config import get_settings
+from app.core import daily as daily_core
 from app.core.profanity import nickname_problem
 from app.models import (
     DailyChallenge,
     GameRound,
     LeaderboardEntry,
+    PhotoReport,
     Property,
     RemovalRequest,
-    SvUsage,
 )
-
-SECRET = base64.urlsafe_b64encode(b"test-signing-secret").decode()
 
 
 def H(device="dev-1"):  # noqa: N802
@@ -107,7 +101,7 @@ def play_through_rest(client, gid, start_round):
 def test_daily_is_deterministic_for_a_date(seeded):
     from app.core import daily
 
-    d = quota.utc_today()
+    d = daily_core.utc_today()
     assert daily.generate_ids(seeded, d) == daily.generate_ids(seeded, d)
     assert daily.generate_ids(seeded, d) != daily.generate_ids(seeded, d + timedelta(days=1))
 
@@ -165,7 +159,7 @@ def test_bad_nicknames_rejected(client, seeded, nick):
 
 
 def test_nickname_filter_allows_normal_names():
-    for ok in ("Alice", "Bob_99", "Zoë", "J. Smith", "Scunthorpe-x"[:3]):
+    for ok in ("Alice", "Bob_99", "Zoë", "J. Smith", "Sam"):
         assert nickname_problem(ok) is None, ok
 
 
@@ -207,8 +201,8 @@ def test_daily_board_by_date(client, seeded):
     )
     today = client.get("/api/leaderboards/daily").json()
     assert [e["nickname"] for e in today["entries"]] == ["DailyDan"]
-    assert today["entries"][0]["date"] == quota.utc_today().isoformat()
-    yesterday = (quota.utc_today() - timedelta(days=1)).isoformat()
+    assert today["entries"][0]["date"] == daily_core.utc_today().isoformat()
+    yesterday = (daily_core.utc_today() - timedelta(days=1)).isoformat()
     assert client.get("/api/leaderboards/daily", params={"date": yesterday}).json()["entries"] == []
     assert (
         client.get("/api/leaderboards/daily", params={"difficulty": "hard"}).json()["entries"] == []
@@ -228,107 +222,123 @@ def test_ranking_order(client, seeded):
     assert scores == sorted(scores, reverse=True)
 
 
-# ------------------------------------------------------------------ Street View + quota ----
-@pytest.fixture
-def google(monkeypatch, seeded):
-    s = get_settings()
-    monkeypatch.setattr(s, "google_maps_api_key", "TESTKEY")
-    monkeypatch.setattr(s, "google_url_signing_secret", SECRET)
-    monkeypatch.setattr(s, "google_daily_quota", 25)
-    monkeypatch.setattr(s, "daily_reserved", 10)
-    for p in seeded.execute(select(Property)).scalars():
-        p.pano_id = f"PANO-{p.source_ref}"
-    seeded.commit()
-    calls = []
-
-    def handler(request):
-        calls.append(request)
-        return httpx.Response(200, json={"status": "OK", "location": {"lat": 0.0, "lng": 0.0}})
-
-    loc = streetview_urls.PanoLocator(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(streetview_urls, "locator", loc)
-    return calls
-
-
-def test_round_has_signed_streetview_url_facing_house(client, google, seeded):
-    g = client.post("/api/games", json={}, headers=H()).json()
-    r = g["round"]
-    assert r["image_source"] == "google"
-    url = urlparse(r["image_url"])
-    q = parse_qs(url.query)
-    assert url.netloc == "maps.googleapis.com" and url.path == "/maps/api/streetview"
-    assert q["pano"][0].startswith("PANO-") and q["key"] == ["TESTKEY"] and "signature" in q
-    assert q["size"] == ["640x640"] and q["pitch"] == ["5"] and q["fov"] == ["80"]
-    assert 0 <= float(q["heading"][0]) < 360
-    assert r["attribution"] == "© Google"
-    assert google[0].url.params["pano"].startswith("PANO-")  # metadata looked up live
-
-
-def test_pano_location_cached_in_memory(client, google):
-    loc = streetview_urls.locator
-    loc.locate("PANO-X", "TESTKEY")
-    loc.locate("PANO-X", "TESTKEY")
-    assert sum(c.url.params["pano"] == "PANO-X" for c in google) == 1
-
-
-def test_quota_blocks_new_games_but_daily_uses_reserve(client, google, seeded):
-    # budget for non-daily = 25 - 10 = 15 URLs = 3 full games
-    for i in range(3):
-        g = client.post("/api/games", json={}, headers=H(f"q{i}")).json()
-        play_through(client, g, device=f"q{i}")
-    r = client.post("/api/games", json={}, headers=H())
-    assert r.status_code == 503 and r.json()["detail"]["code"] == "quota_exceeded"
-    assert "come back tomorrow" in r.json()["detail"]["message"]
-    usage = seeded.get(SvUsage, quota.utc_today())
-    seeded.refresh(usage)
-    assert usage.urls_issued == 15
-    assert client.get("/api/meta").json()["quota"] == {
-        "games_available": False,
-        "daily_available": True,
-    }
-    d = client.post("/api/daily/start", json={}, headers=H("daily-1"))
-    assert d.status_code == 201
-    play_through(client, d.json(), device="daily-1")
-    seeded.refresh(usage)
-    assert (usage.urls_issued, usage.daily_reserved_used) == (20, 5)
-    # 25 - 20 = 5 left: one more Daily fits, then nothing
-    d2 = client.post("/api/daily/start", json={}, headers=H("daily-2"))
-    assert d2.status_code == 201
-    play_through(client, d2.json(), device="daily-2")
-    assert client.post("/api/daily/start", json={}, headers=H("daily-3")).status_code == 503
-
-
-def test_no_key_means_placeholder_and_no_quota(client, seeded):
-    g = client.post("/api/games", json={}, headers=H()).json()
-    assert g["round"]["image_url"] is None and g["round"]["attribution"] is None
-    assert g["round"]["image_source"] is None
-    assert seeded.get(SvUsage, quota.utc_today()) is None
-
-
 # -------------------------------------------------------------------- Telemetry/removals ----
-def test_image_error_sends_property_back_for_recheck(client, seeded):
+def _round_prop(db, gid, n=1):
+    pid = db.get(GameRound, (gid, n)).property_id
+    db.expire_all()
+    return db.get(Property, pid)
+
+
+def test_image_error_marks_photos_broken_and_drops_home_below_two(client, seeded):
     g = client.post("/api/games", json={}, headers=H()).json()
+    gid = g["game_id"]
+    p = _round_prop(seeded, gid)
+    positions = [ph["position"] for ph in g["round"]["photos"]]
+    assert len(positions) >= 3
     r = client.post(
-        "/api/telemetry/image-error", json={"game_id": g["game_id"], "round_no": 1}, headers=H()
+        "/api/telemetry/image-error",
+        json={"game_id": gid, "round_no": 1, "positions": positions[:1]},
+        headers=H(),
     )
     assert r.status_code == 204
-    pid = seeded.get(GameRound, (g["game_id"], 1)).property_id
-    seeded.expire_all()
-    assert seeded.get(Property, pid).sv_status == "unchecked"
+    p = _round_prop(seeded, gid)
+    assert p.images_status == "ok"  # still >= 2 working
+    statuses = {i.position: i.status for i in p.images}
+    assert statuses[positions[0]] == "broken"
+    client.post(
+        "/api/telemetry/image-error",
+        json={"game_id": gid, "round_no": 1, "positions": positions},
+        headers=H(),
+    )
+    assert _round_prop(seeded, gid).images_status == "broken"  # out of the pool
 
 
 def test_image_error_only_for_rounds_shown(client, seeded):
     g = client.post("/api/games", json={}, headers=H()).json()
     r = client.post(
-        "/api/telemetry/image-error", json={"game_id": g["game_id"], "round_no": 4}, headers=H()
+        "/api/telemetry/image-error",
+        json={"game_id": g["game_id"], "round_no": 4, "positions": [0]},
+        headers=H(),
     )
     assert r.status_code == 404
     r = client.post(
         "/api/telemetry/image-error",
-        json={"game_id": g["game_id"], "round_no": 1},
+        json={"game_id": g["game_id"], "round_no": 1, "positions": [0]},
         headers=H("other-device"),
     )
     assert r.status_code == 404
+
+
+def test_price_visible_report_removes_home_from_play(client, seeded):
+    g = client.post("/api/games", json={}, headers=H()).json()
+    p = _round_prop(seeded, g["game_id"])
+    r = client.post(
+        "/api/reports",
+        json={"game_id": g["game_id"], "round_no": 1, "position": 0, "reason": "price_visible"},
+        headers=H(),
+    )
+    assert r.status_code == 201
+    rep = seeded.execute(select(PhotoReport)).scalar_one()
+    assert (rep.reason, rep.status, rep.property_id) == ("price_visible", "open", p.id)
+    for _ in range(15):
+        g2 = client.post("/api/games", json={}, headers=H()).json()
+        ids = {
+            x.property_id
+            for x in seeded.execute(
+                select(GameRound).where(GameRound.game_id == g2["game_id"])
+            ).scalars()
+        }
+        assert p.id not in ids
+    rep.status = "dismissed"
+    seeded.commit()
+    from app.core.selection import load_candidates
+
+    assert p.id in {
+        c.id
+        for c in load_candidates(
+            seeded, today=daily_core.utc_today(), max_age_years=2, setting_filter="rural,urban"
+        )
+    }
+
+
+def test_other_reports_dont_remove_home(client, seeded):
+    g = client.post("/api/games", json={}, headers=H()).json()
+    for reason in ("broken", "person", "other"):
+        assert (
+            client.post(
+                "/api/reports",
+                json={"game_id": g["game_id"], "round_no": 1, "reason": reason},
+                headers=H(),
+            ).status_code
+            == 201
+        )
+    assert (
+        client.post(
+            "/api/reports",
+            json={"game_id": g["game_id"], "round_no": 1, "reason": "spam"},
+            headers=H(),
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/reports",
+            json={"game_id": g["game_id"], "round_no": 3, "reason": "other"},
+            headers=H(),
+        ).status_code
+        == 404
+    )
+
+
+def test_no_route_serves_or_proxies_image_bytes():
+    """Section 13.2: photos are hotlinked; the API never serves, proxies or redirects to images."""
+    from app.main import app
+
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        assert not any(w in path.lower() for w in ("image/", "proxy", "photo/", "thumb")), path
+        if path:
+            assert path.startswith(("/api", "/docs", "/redoc")) or "openapi" in path, path
 
 
 def test_removal_request_stored(client, seeded):

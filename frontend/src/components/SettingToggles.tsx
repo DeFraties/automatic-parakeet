@@ -1,14 +1,14 @@
 import type { Setting } from '../api';
 import { ALL_SETTINGS, SETTING_LABEL, sortSettings } from '../game';
 
-const ICON: Record<Setting, string> = { urban: '🏙️', suburban: '🏡', rural: '🌾' };
+const ICON: Record<Setting, string> = { urban: '🏙️', rural: '🌾' };
 
 interface Props {
   value: Setting[];
   onChange: (s: Setting[]) => void;
 }
 
-/** Urban / Suburban / Rural toggles. At least one stays on. */
+/** Urban (incl. suburbs) / Rural toggles. At least one stays on. */
 export function SettingToggles({ value, onChange }: Props) {
   return (
     <div className="toggles" role="group" aria-labelledby="settings-label">

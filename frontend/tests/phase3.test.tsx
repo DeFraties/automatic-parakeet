@@ -40,22 +40,22 @@ describe('setting toggles', () => {
     expect(screen.getByRole('button', { name: /Urban/ })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: /Rural/ }));
     expect(onChange).toHaveBeenCalledWith(['urban', 'rural']);
+    expect(screen.queryByRole('button', { name: /Suburban/ })).not.toBeInTheDocument();
   });
 
   it('defaults to urban + rural and remembers the choice', () => {
     expect(loadSettings()).toEqual(['urban', 'rural']);
-    window.localStorage.setItem('ballpark_settings', 'suburban');
-    expect(loadSettings()).toEqual(['suburban']);
-    window.localStorage.setItem('ballpark_settings', 'garbage');
+    window.localStorage.setItem('ballpark_settings', 'rural');
+    expect(loadSettings()).toEqual(['rural']);
+    window.localStorage.setItem('ballpark_settings', 'suburban'); // old v1 value
     expect(loadSettings()).toEqual(['urban', 'rural']);
   });
 
   it('selectability depends on the chosen settings', () => {
     const meta = makeMeta(['FR']);
-    const fr = meta.countries.find((c) => c.code === 'FR')!; // urban 40, suburban 10, rural 40
+    const fr = meta.countries.find((c) => c.code === 'FR')!; // urban 40, rural 15
     expect(isSelectable(fr.eligible, ['urban', 'rural'], meta)).toBe(true);
-    expect(isSelectable(fr.eligible, ['suburban'], meta)).toBe(false);
-    expect(isSelectable(fr.eligible, ['urban', 'suburban'], meta)).toBe(true);
+    expect(isSelectable(fr.eligible, ['rural'], meta)).toBe(false);
   });
 });
 
@@ -128,44 +128,62 @@ describe('App: Daily Challenge', () => {
     expect(await screen.findByText(/✓ Done today · 18,420 pts/)).toBeInTheDocument();
   });
 
-  it('quota limit disables Classic but not the Daily', async () => {
-    stubFetch((url) => {
-      if (url === '/api/meta') return { ...makeMeta(), quota: { games_available: false, daily_available: true } };
-      if (url === '/api/daily') return notPlayed;
-    });
-    render(<App />);
-    expect(await screen.findByText(/hit today's limit/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Classic/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Daily Challenge/ })).toBeEnabled();
-  });
 });
 
 describe('App: Classic with settings', () => {
-  it('sends the chosen settings and reports image errors', async () => {
+  it('sends the chosen settings, shows listing photos and reports broken ones', async () => {
     const calls = stubFetch((url, body) => {
       if (url === '/api/meta') return makeMeta();
       if (url === '/api/daily') return notPlayed;
       if (url === '/api/games')
         return { game_id: 'g1', rounds_total: 5, mode: 'classic', where_scope: 'world', where_value: null,
-                 settings: body.settings, difficulty: 'normal',
-                 round: { ...makeRound(1), image_url: 'https://cdn.mly.test/1.jpg', image_source: 'mapillary', attribution: '© Mapillary contributors · CC BY-SA 4.0' } };
+                 settings: body.settings, difficulty: 'normal', round: makeRound(1) };
       if (url === '/api/telemetry/image-error') return new Response(null, { status: 204 });
+      if (url === '/api/reports') return { id: 1, status: 'open' };
     });
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Suburban', pressed: false }));
-    await user.click(screen.getByRole('button', { name: 'Rural', pressed: true }));
-    expect(screen.getByText('Urban + Suburban · 5 rounds')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Rural', pressed: true }));
+    expect(screen.getByText('Urban · 5 rounds')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Classic/ }));
-    expect(calls.find((c) => c.url === '/api/games')!.body.settings).toEqual(['urban', 'suburban']);
-    expect(await screen.findByText('Classic · World · Urban + Suburban · Normal')).toBeInTheDocument();
-    expect(screen.getByText('© Mapillary contributors · CC BY-SA 4.0')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /Map showing the area around City1/ })).toBeInTheDocument();
-    fireEvent.error(screen.getByRole('img', { name: /Photo of a property in City1/ }));
-    expect(await screen.findByText('No photo for this one. Use the clues!')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(calls.find((c) => c.url === '/api/telemetry/image-error')!.body).toEqual({ game_id: 'g1', round_no: 1, source: 'mapillary' }),
+    expect(calls.find((c) => c.url === '/api/games')!.body.settings).toEqual(['urban']);
+    expect(await screen.findByText('Classic · World · Urban · Normal')).toBeInTheDocument();
+    expect(screen.getByText('Photos: Example Listings')).toBeInTheDocument();
+    const first = screen.getByRole('img', { name: 'Listing photo 1 of 3, property in City1, Japan' });
+    expect(first).toHaveAttribute('src', 'https://img.test/r1/0.jpg');
+    expect(first).not.toHaveAttribute('referrerpolicy');
+
+    // Report the photo on screen
+    await user.click(screen.getByRole('button', { name: 'Report photo' }));
+    await user.click(screen.getByRole('button', { name: 'Send report' }));
+    expect(await screen.findByText(/Thanks — reported/)).toBeInTheDocument();
+    expect(calls.find((c) => c.url === '/api/reports')!.body).toEqual(
+      { game_id: 'g1', round_no: 1, position: 0, reason: 'price_visible' });
+
+    // Every photo fails -> placeholder + one batched telemetry report
+    for (const img of document.querySelectorAll('.carousel-slide img')) fireEvent.error(img);
+    expect(await screen.findByText('Photos unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Photos: Example Listings')).toBeInTheDocument(); // credit stays
+    await waitFor(
+      () => expect(calls.find((c) => c.url === '/api/telemetry/image-error')!.body)
+        .toEqual({ game_id: 'g1', round_no: 1, positions: [0, 1, 2] }),
+      { timeout: 3000 },
     );
+  });
+
+  it('hides the mini map when the listing has no coordinates', async () => {
+    stubFetch((url, body) => {
+      if (url === '/api/meta') return makeMeta();
+      if (url === '/api/daily') return notPlayed;
+      if (url === '/api/games')
+        return { game_id: 'g1', rounds_total: 5, mode: 'classic', where_scope: 'world', where_value: null,
+                 settings: body.settings, difficulty: 'normal', round: { ...makeRound(1), map: null } };
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /Classic/ }));
+    await screen.findByText('Round 1/5');
+    expect(screen.queryByRole('img', { name: /Map showing/ })).not.toBeInTheDocument();
   });
 });
 
@@ -182,13 +200,13 @@ describe('Leaderboards screen', () => {
     await user.click(screen.getByRole('tab', { name: 'Classic' }));
     await user.click(screen.getByRole('radio', { name: /Hard/ }));
     await user.selectOptions(screen.getByLabelText('Where'), 'country:FR');
-    await user.click(screen.getByRole('button', { name: /Suburban/ }));
+    await user.click(screen.getByRole('button', { name: 'Rural', pressed: true }));
     await waitFor(() => {
       const url = calls[calls.length - 1].url;
       expect(url).toContain('/api/leaderboards/classic?');
       const q = new URLSearchParams(url.split('?')[1]);
       expect(Object.fromEntries(q)).toEqual({ difficulty: 'hard', where_scope: 'country', where_value: 'FR',
-                                              settings: 'rural,suburban,urban', period: 'all' });
+                                              settings: 'urban', period: 'all' });
     });
     const row = await screen.findByRole('row', { name: /Alice/ });
     expect(within(row).getByText('21,000')).toBeInTheDocument();
@@ -199,66 +217,78 @@ describe('About page', () => {
   it('lists sources and sends a removal request', async () => {
     const calls = stubFetch((url) => (url === '/api/removals' ? { id: 1, status: 'pending' } : undefined));
     const meta = makeMeta();
-    meta.sources = [{ key: 'uk', display_name: 'HM Land Registry Price Paid Data', homepage: 'https://gov.uk',
-                      license_note: 'Contains HM Land Registry data © Crown copyright' }];
+    meta.sources = [{ key: 'ex', display_name: 'Example Listings', homepage: 'https://listings.test',
+                      license_note: 'Listing data and photos © Example Listings', image_hosts: [] }];
     const user = userEvent.setup();
     render(<About meta={meta} />);
-    expect(screen.getByRole('link', { name: 'HM Land Registry Price Paid Data' })).toBeInTheDocument();
-    expect(screen.getByText(/Crown copyright/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Example Listings' })).toBeInTheDocument();
+    expect(screen.getByText(/© Example Listings/)).toBeInTheDocument();
+    expect(screen.getByText(/never copied to our servers/)).toBeInTheDocument();
     expect(screen.getByText(/GHS-SMOD/, { selector: 'small' })).toBeInTheDocument();
     await user.type(screen.getByLabelText('Your email'), 'me@example.com');
     await user.type(screen.getByLabelText('Listing link or property ID'), 'https://example.com/x');
     await user.click(screen.getByRole('button', { name: 'Send removal request' }));
-    expect(await screen.findByText(/within 72 hours/)).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent(/within 72 hours/);
     expect(calls[0].body).toEqual({ email: 'me@example.com', reference: 'https://example.com/x', message: '' });
   });
 });
 
-describe('PropertyImage', () => {
-  it('shows a listing photo with its credit', async () => {
-    const { PropertyImage } = await import('../src/components/PropertyImage');
-    render(<PropertyImage url="https://photos.example/1.jpg" alt="Photo of a property in Leeds, United Kingdom"
-             attribution="Photo: Example Homes" setting="suburban" propertyType="house" />);
-    expect(screen.getByRole('img', { name: /Photo of a property in Leeds/ })).toHaveAttribute('src', 'https://photos.example/1.jpg');
-    expect(screen.getByText('Photo: Example Homes')).toBeInTheDocument();
+describe('PhotoCarousel', () => {
+  const photos = [0, 1, 2, 3].map((i) => ({
+    position: i, url: `https://img.test/${i}.jpg`, width: 1600, height: 1067,
+    kind: (i === 3 ? 'floorplan' : 'photo') as 'photo' | 'floorplan',
+    alt: `${i === 3 ? 'Floor plan' : 'Listing photo'} ${i + 1} of 4, property in Lyon, France`,
+  }));
+
+  async function load() {
+    const { PhotoCarousel } = await import('../src/components/PhotoCarousel');
+    return PhotoCarousel;
+  }
+
+  it('shows photos in order, lazy after the first, with the credit always visible', async () => {
+    const PhotoCarousel = await load();
+    render(<PhotoCarousel photos={photos} credit="Photos: Example Listings" />);
+    const imgs = document.querySelectorAll('.carousel-slide img');
+    expect([...imgs].map((i) => i.getAttribute('src'))).toEqual(photos.map((p) => p.url));
+    expect(imgs[0]).toHaveAttribute('loading', 'eager');
+    expect(imgs[1]).toHaveAttribute('loading', 'lazy');
+    expect(screen.getByText('Photos: Example Listings')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Show photo/ })).toHaveLength(4);
   });
 
-  it('illustrated card is themed by setting and type', async () => {
-    const { PropertyImage } = await import('../src/components/PropertyImage');
-    const { container } = render(<PropertyImage url={null} alt="x" attribution={null} setting="rural" propertyType="house" />);
-    expect(screen.getByRole('img', { name: 'Illustration of a rural house (no photo available)' })).toBeInTheDocument();
-    expect(container.querySelector('.scene-rural')).not.toBeNull();
-  });
-});
-
-describe('photo source hint', () => {
-  it('tells the owner how to enable photos when none is configured', async () => {
-    stubFetch((url) => {
-      if (url === '/api/meta') return { ...makeMeta(), photo_sources: { mapillary: false, google: false } };
-      if (url === '/api/daily') return notPlayed;
-    });
-    render(<App />);
-    expect(await screen.findByText(/No photo source is set up/)).toBeInTheDocument();
+  it('keyboard and arrow navigation', async () => {
+    const PhotoCarousel = await load();
+    const onCurrent = vi.fn();
+    render(<PhotoCarousel photos={photos} credit="c" onCurrentChange={onCurrent} />);
+    const frame = screen.getByLabelText(/Photo 1 of 4/);
+    fireEvent.keyDown(frame, { key: 'ArrowRight' });
+    expect(screen.getByLabelText(/Photo 2 of 4/)).toBeInTheDocument();
+    fireEvent.keyDown(frame, { key: 'ArrowLeft' });
+    fireEvent.keyDown(frame, { key: 'ArrowLeft' });
+    expect(screen.getByLabelText(/Photo 4 of 4/)).toBeInTheDocument(); // wraps
+    await userEvent.click(screen.getByRole('button', { name: 'Next photo' }));
+    expect(screen.getByLabelText(/Photo 1 of 4/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show photo 3 of 4' }));
+    expect(onCurrent).toHaveBeenLastCalledWith(2);
   });
 
-  it('stays quiet when Mapillary is configured', async () => {
-    stubFetch((url) => {
-      if (url === '/api/meta') return makeMeta();
-      if (url === '/api/daily') return notPlayed;
-    });
-    render(<App />);
-    await screen.findByRole('button', { name: /Daily Challenge/ });
-    expect(screen.queryByText(/No photo source is set up/)).not.toBeInTheDocument();
+  it('skips broken photos silently', async () => {
+    const PhotoCarousel = await load();
+    render(<PhotoCarousel photos={photos} credit="c" />);
+    fireEvent.error(document.querySelectorAll('.carousel-slide img')[1]);
+    expect(document.querySelectorAll('.carousel-slide img')).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: /Show photo/ })).toHaveLength(3);
+    expect(screen.queryByText('Photos unavailable')).not.toBeInTheDocument();
   });
-});
 
-describe('photo check progress', () => {
-  it('shows how many homes are still being checked', async () => {
-    stubFetch((url) => {
-      if (url === '/api/meta') return { ...makeMeta(), photo_check_pending: 1234 };
-      if (url === '/api/daily') return notPlayed;
-    });
-    render(<App />);
-    expect(await screen.findByText(/1,234 homes left to check/)).toBeInTheDocument();
+  it('opens full screen and closes with Escape', async () => {
+    const PhotoCarousel = await load();
+    render(<PhotoCarousel photos={photos} credit="Photos: X" />);
+    await userEvent.click(screen.getByRole('button', { name: 'View photo full screen' }));
+    const dialog = screen.getByRole('dialog', { name: 'Full-screen photo' });
+    expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'https://img.test/0.jpg');
+    expect(within(dialog).getByText('1 / 4 · Photos: X')).toBeInTheDocument();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

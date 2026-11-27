@@ -17,7 +17,14 @@ def test_seed_covers_all_countries(db):
     per_country = Counter(p.country_code for p in props)
     assert set(per_country) == COUNTRY_CODES
     assert min(per_country.values()) >= 3
-    assert {p.setting for p in props} == {"urban", "suburban", "rural"}
+    assert {p.setting for p in props} == {"urban", "rural"}
+    demo_dir = Path(__file__).parents[2] / "frontend" / "public" / "demo-photos"
+    for p in props:
+        assert 3 <= len(p.images) <= 6 and p.images_status == "ok" and p.listing_url
+        assert [i.position for i in p.images] == list(range(len(p.images)))
+        for img in p.images:
+            assert img.url.startswith("/demo-photos/")
+            assert (demo_dir / img.url.rsplit("/", 1)[1]).exists()
     assert {p.price_type for p in props} == {"sale_record", "asking"}
     assert all(p.source.display_name.startswith("DEMO") for p in props)
 
@@ -72,5 +79,5 @@ def test_upgrade_with_existing_games(tmp_path):
         )
     command.upgrade(cfg, "head")
     with eng.begin() as c:
-        assert c.execute(text("SELECT setting_filter FROM games")).scalar_one() == "suburban,urban"
+        assert c.execute(text("SELECT setting_filter FROM games")).scalar_one() == "urban"
         assert c.execute(text("SELECT count(*) FROM game_rounds")).scalar_one() == 1

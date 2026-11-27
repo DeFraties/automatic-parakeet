@@ -9,11 +9,10 @@ const TYPE_LABEL: Record<string, string> = {
   other: 'Other',
 };
 
-const SETTING_ICON: Record<string, string> = { urban: '🏙️', suburban: '🏡', rural: '🌾' };
+const SETTING_ICON: Record<string, string> = { urban: '🏙️', rural: '🌾' };
 
 const SETTING_LABEL: Record<string, string> = {
   urban: 'Urban',
-  suburban: 'Suburban',
   rural: 'Rural',
   unknown: 'Unknown setting',
 };

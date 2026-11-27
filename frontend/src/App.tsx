@@ -212,10 +212,8 @@ export default function App() {
           submitting={busy}
           error={error}
           onGuess={guess}
-          onImageError={() =>
-            game.round?.image_source &&
-            api.reportImageError(h.game_id, roundNo, game.round.image_source)
-          }
+          onPhotosFailed={(positions) => api.reportImageError(h.game_id, roundNo, positions)}
+          onReport={(position, reason) => api.reportPhoto(h.game_id, roundNo, position, reason)}
           tileUrl={meta?.tile_url}
           tileAttribution={meta?.tile_attribution}
         />
@@ -281,16 +279,13 @@ export default function App() {
       {screen}
       <footer className="footer">
         <p>
-          Data:{' '}
-          {meta?.sources.length
-            ? meta.sources.map((s) => s.display_name).join(' · ')
-            : 'loading sources…'}
-          . Prices may be asking prices or recorded sale prices.
+          Photos and listing data belong to their sources
+          {meta?.sources.length ? `: ${meta.sources.map((s) => s.display_name).join(' · ')}` : ''}.
+          Prices may be asking prices or recorded sale prices.
         </p>
         <p>
-          Photos: listing sources, Mapillary (CC BY-SA) or Google · Maps © OpenStreetMap
-          contributors ·{' '}
-          <a href="#/about">About &amp; data</a> · <a href="#/about">Request removal</a>
+          Maps © OpenStreetMap contributors · <a href="#/about">About &amp; data</a> ·{' '}
+          <a href="#/about#removal">Request removal</a>
         </p>
       </footer>
     </div>

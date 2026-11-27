@@ -16,8 +16,8 @@ export function makeMeta(selectable: string[] = ['FR', 'JP']): Meta {
     region,
     locale: 'en-US',
     eligible: selectable.includes(code)
-      ? { urban: 40, suburban: 10, rural: 40 }
-      : { urban: 1, suburban: 1, rural: 1 },
+      ? { urban: 40, rural: 15 }
+      : { urban: 1, rural: 1 },
     selectable: selectable.includes(code),
   }));
   const regionKeys = ['north_america', 'south_america', 'europe', 'africa', 'oceania', 'east_asia'];
@@ -29,24 +29,21 @@ export function makeMeta(selectable: string[] = ['FR', 'JP']): Meta {
       emoji: '🌍',
       countries: countries.filter((c) => c.region === key).map((c) => c.code),
       eligible:
-        key === 'europe' ? { urban: 60, suburban: 0, rural: 60 } : { urban: 0, suburban: 0, rural: 0 },
+        key === 'europe' ? { urban: 60, rural: 60 } : { urban: 0, rural: 0 },
       selectable: key === 'europe',
     })),
-    world: { eligible: { urban: 30, suburban: 30, rural: 30 }, selectable: true },
-    sources: [{ key: 'demo', display_name: 'DEMO data (fictional)', homepage: null, license_note: null }],
+    world: { eligible: { urban: 30, rural: 30 }, selectable: true },
+    sources: [
+      { key: 'demo', display_name: 'DEMO data (fictional)', homepage: null, license_note: null, image_hosts: [] },
+    ],
     daily_number: 1,
     min_pool_per_option: 50,
     rounds_per_game: 5,
     public_base_url: 'https://ballpark.example.com',
     contact_email: 'owner@example.com',
-    settings: { all: ['urban', 'suburban', 'rural'], default: ['urban', 'rural'] },
+    settings: { all: ['urban', 'rural'], default: ['urban', 'rural'] },
     tile_url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     tile_attribution: '&copy; OpenStreetMap contributors',
-    streetview_enabled: false,
-    photo_sources: { mapillary: true, google: false },
-    photos_required: true,
-    photo_check_pending: 0,
-    quota: { games_available: true, daily_available: true },
   };
 }
 
@@ -54,9 +51,15 @@ export function makeRound(n: number, hard = false): RoundPayload {
   return {
     round_no: n,
     rounds_total: 5,
-    image_url: null,
-    image_source: null,
-    attribution: null,
+    photos: [0, 1, 2].map((i) => ({
+      position: i,
+      url: `https://img.test/r${n}/${i}.jpg`,
+      width: 1600,
+      height: 1067,
+      kind: 'photo' as const,
+      alt: `Listing photo ${i + 1} of 3, property in City${n}, Japan`,
+    })),
+    photo_credit: 'Photos: Example Listings',
     difficulty: hard ? 'hard' : 'normal',
     guess_currency: hard ? 'JPY' : 'USD',
     local_currency: 'JPY',
@@ -122,6 +125,7 @@ export function makeSummary(
       city: `City${i + 1}`,
       country_code: 'JP',
       flag: '🇯🇵',
+      lead_photo: `https://img.test/r${i + 1}/0.jpg`,
       currency: 'JPY',
       price_local: 68_000_000,
       price_usd: 455_600,

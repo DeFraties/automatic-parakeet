@@ -99,6 +99,9 @@ export function Summary({
           <thead>
             <tr>
               <th scope="col" className="col-no">#</th>
+              <th scope="col" className="col-thumb">
+                <span className="sr-only">Photo</span>
+              </th>
               <th scope="col">City</th>
               <th scope="col">Actual</th>
               <th scope="col" className="col-guess">Guess</th>
@@ -109,6 +112,18 @@ export function Summary({
             {summary.rounds.map((r) => (
               <tr key={r.round_no}>
                 <td className="col-no">{r.round_no}</td>
+                <td className="col-thumb">
+                  {r.lead_photo && (
+                    <img
+                      className="thumb"
+                      src={r.lead_photo}
+                      alt=""
+                      loading="lazy"
+                      width={72}
+                      height={48}
+                    />
+                  )}
+                </td>
                 <td>
                   <span aria-hidden="true">{r.flag}</span> {r.city}
                 </td>

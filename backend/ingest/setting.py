@@ -1,4 +1,5 @@
-"""Urban / suburban / rural classification from the GHSL GHS-SMOD raster (Section 8.9).
+"""Urban / rural classification from the GHSL GHS-SMOD raster (Section 8.9).
+Suburbs count as urban (owner decision 2026-11-27).
 
 Source: European Commission JRC, GHSL Degree of Urbanisation settlement model (GHS-SMOD),
 CC BY 4.0. One 1 km grid cell per value, Mollweide projection (ESRI:54009).
@@ -14,30 +15,26 @@ log = logging.getLogger(__name__)
 SMOD_TO_SETTING: dict[int, str] = {
     30: "urban",  # urban centre
     23: "urban",  # dense urban cluster
-    22: "suburban",  # semi-dense urban cluster
-    21: "suburban",  # suburban or peri-urban
+    22: "urban",  # semi-dense urban cluster (owner decision: suburbs count as urban)
+    21: "urban",  # suburban or peri-urban
     13: "rural",  # rural cluster
     12: "rural",  # low density rural
     11: "rural",  # very low density rural
     10: "unknown",  # water
 }
 
-LARGE_HOUSE_M2 = 400
-
 
 def adjust_setting(
     setting: str, code: int | None, property_type: str | None, area_m2: float | None
 ) -> str:
-    """Owner-tweakable adjustment rules applied after the raster lookup.
+    """Owner-tweakable adjustment rules applied after the raster lookup (Section 8.9).
 
     - An apartment in an urban-centre cell (30) stays urban.
-    - A house over 400 m² in a dense-urban-cluster cell (23) becomes suburban: large detached
-      houses inside dense clusters are usually at the edge of the city.
+    The spec's other rule (large house in a dense cluster -> suburban) no longer changes anything
+    since suburbs count as urban (owner decision 2026-11-27). Add new rules here.
     """
     if code == 30 and property_type == "apartment":
         return "urban"
-    if code == 23 and property_type == "house" and area_m2 is not None and area_m2 > LARGE_HOUSE_M2:
-        return "suburban"
     return setting
 
 
@@ -118,6 +115,13 @@ class SettingClassifier:
         ]
 
     def classify(
-        self, lat: float, lng: float, property_type: str | None = None, area_m2: float | None = None
+        self,
+        lat: float | None,
+        lng: float | None,
+        property_type: str | None = None,
+        area_m2: float | None = None,
     ) -> tuple[str, int | None]:
+        """Listings without coordinates are 'unknown' (and therefore not playable)."""
+        if lat is None or lng is None:
+            return "unknown", None
         return self.classify_many([(lat, lng, property_type, area_m2)])[0]

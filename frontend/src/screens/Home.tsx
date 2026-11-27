@@ -33,8 +33,6 @@ export function Home({
   error,
 }: Props) {
   const worldOk = meta ? isSelectable(meta.world.eligible, settings, meta, true) : false;
-  const gamesOk = meta?.quota.games_available ?? true;
-  const dailyOk = meta?.quota.daily_available ?? true;
 
   let dailySub = 'Same 5 homes for everyone today';
   let dailyCta = 'Play';
@@ -134,18 +132,13 @@ export function Home({
           {error}
         </p>
       )}
-      {meta && !gamesOk && (
-        <p className="banner" role="status">
-          We've hit today's limit — come back tomorrow (Daily Challenge still works).
-        </p>
-      )}
 
       <section className="modes" aria-label="Game modes">
         <button
           type="button"
           className="mode-card mode-card-primary"
           onClick={onStart}
-          disabled={starting || !worldOk || !gamesOk}
+          disabled={starting || !worldOk}
         >
           <span className="mode-title">Classic</span>
           <span className="mode-sub">{settingsLabel(settings)} · 5 rounds</span>
@@ -155,7 +148,7 @@ export function Home({
           type="button"
           className="mode-card"
           onClick={onDaily}
-          disabled={starting || (!daily?.played && !dailyOk)}
+          disabled={starting}
         >
           <span className="mode-title">
             Daily Challenge {meta ? <span className="mode-num">#{meta.daily_number}</span> : null}
@@ -170,24 +163,12 @@ export function Home({
         <a href="#/about">How it works &amp; data</a>
       </nav>
 
-      {meta && !meta.photo_sources.mapillary && !meta.photo_sources.google && (
-        <p className="banner" role="status">
-          📷 No photo source is set up, so homes show illustrations. To show street photos, add{' '}
-          <code>MAPILLARY_TOKEN=…</code> to <code>.env</code> and restart with <code>make dev</code>.
-        </p>
-      )}
 
-      {meta && meta.photos_required && meta.photo_check_pending > 0 && (
-        <p className="banner" role="status">
-          📷 Finding street photos: {formatNumber(meta.photo_check_pending)} homes left to check.
-          Only homes with a photo are played, so more appear as photos are found. Reload in a minute.
-        </p>
-      )}
 
-      {meta && !worldOk && meta.photo_check_pending === 0 && (
+      {meta && !worldOk && (
         <p className="banner">
           Not enough playable homes for these settings yet. Try turning on more neighbourhood types,
-          or load homes with <code>make load-uk</code>.
+          or load demo homes with <code>make seed</code>.
         </p>
       )}
     </main>

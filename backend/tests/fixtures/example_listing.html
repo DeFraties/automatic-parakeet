@@ -1,24 +1,37 @@
 <!doctype html>
-<html><head><title>Apartamento T2 em Lisboa — Example Homes (fixture)</title></head>
+<html><head><title>Apartamento T2 em Lisboa — Example Listings (FICTIONAL fixture)</title>
+<!-- Most real sites embed their listing data as JSON. Plugins should prefer it over HTML. -->
+<script type="application/json" id="listing-data">
+{
+  "id": "EX-1001",
+  "price": {"amount": 340000, "currency": "EUR", "display": "€ 340.000"},
+  "status": "for_sale",
+  "type": "Apartamento",
+  "area": "85 m²",
+  "bedrooms": 2,
+  "bathrooms": 1,
+  "yearBuilt": 1965,
+  "address": {"street": "Rua de Exemplo 12", "city": "Lisbon", "region": "Lisboa", "country": "PT"},
+  "geo": {"lat": 38.71391, "lng": -9.13940, "precision": "exact"},
+  "agent": {"name": "Maria Example", "phone": "+351 900 000 000", "email": "maria@example.com"},
+  "description": "Charming apartment with river views, recently renovated.",
+  "photos": [
+    {"url": "https://images.example.test/ex-1001/1-1600.jpg", "width": 1600, "height": 1067},
+    {"url": "https://images.example.test/ex-1001/2-1600.jpg", "width": 1600, "height": 1067},
+    {"url": "https://images.example.test/ex-1001/3-1600.jpg", "width": 1600, "height": 1067},
+    {"url": "https://images.example.test/ex-1001/4-1600.jpg", "width": 1600, "height": 1067},
+    {"url": "https://images.example.test/ex-1001/plan-1600.png", "width": 1600, "height": 1131, "label": "Floor plan"},
+    {"url": "https://images.example.test/ex-1001/5-1600.jpg", "width": 1600, "height": 1067},
+    {"url": "https://images.example.test/ex-1001/6-1600.jpg", "width": 1600, "height": 1067},
+    {"url": "https://images.example.test/ex-1001/7-1600.jpg", "width": 1600, "height": 1067}
+  ]
+}
+</script>
+</head>
 <body>
-  <!-- FICTIONAL fixture page for the example_html reference plugin. -->
-  <article class="listing" data-listing-id="EX-1001" data-lat="38.71391" data-lng="-9.13940"
-           data-precision="exact">
+  <article class="listing" data-listing-id="EX-1001">
     <h1 class="title">Bright T2 apartment near Graça</h1>
-    <!-- Photos: must NEVER be stored -->
-    <img class="photo" src="photos/ex-1001-1.jpg" alt="Living room">
-    <img class="photo" src="photos/ex-1001-2.jpg" alt="Kitchen">
     <div class="price">€ 340.000</div>
-    <ul class="facts">
-      <li class="type">Apartamento</li>
-      <li class="area">85 m²</li>
-      <li class="beds">2</li>
-      <li class="baths">1</li>
-      <li class="year">1965</li>
-    </ul>
-    <span class="locality" data-city="Lisbon" data-region="Lisboa" data-country="PT">Lisbon</span>
-    <time class="listed" datetime="2025-10-01">1 Oct 2025</time>
-    <!-- Free text and contact details: must NEVER be stored -->
     <p class="description">Charming apartment with river views, recently renovated.</p>
     <div class="agent">Agent: Maria Example · Tel. +351 900 000 000 · maria@example.com</div>
     <address>Rua de Exemplo 12, 1100-000 Lisboa</address>

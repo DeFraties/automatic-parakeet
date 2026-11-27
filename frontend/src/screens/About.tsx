@@ -74,25 +74,41 @@ export function About({ meta }: { meta: Meta | null }) {
         </p>
       </div>
 
-      <h2>Where the data comes from</h2>
+      <h2>Where the homes come from</h2>
       <div className="card prose">
         <p>
-          Prices are either <strong>recorded sale prices</strong> from official open data or{' '}
-          <strong>asking prices</strong> from public listings. The reveal screen says which. We keep
-          facts (price, size, rooms, rough location) and always link back to the source. Listing
-          photos are shown straight from the listing site and credited to it; we never copy them.
-          We never keep descriptions or anyone's contact details.
+          Every home comes from a public listing site. The listing's photos and data belong to their
+          owners: the site, the agent or the photographer. Prices may be <strong>asking prices</strong>{' '}
+          or <strong>recorded sale prices</strong>, and the reveal screen says which.
+        </p>
+        <p>
+          Photos are shown <strong>directly from the listing site</strong>, exactly as published.
+          They are never copied to our servers, never edited and never cropped, and every reveal
+          links back to the original listing. We keep only facts (price, size, rooms, the
+          listing's own rough location) and never store descriptions or anyone's contact details.
         </p>
         <ul className="sources">
           {meta?.sources.map((s) => (
             <li key={s.key}>
-              {s.homepage ? <a href={s.homepage} target="_blank" rel="noopener noreferrer">{s.display_name}</a> : s.display_name}
+              {s.homepage ? (
+                <a href={s.homepage} target="_blank" rel="noopener noreferrer">
+                  {s.display_name}
+                </a>
+              ) : (
+                s.display_name
+              )}
               {s.license_note && <small>{s.license_note}</small>}
             </li>
           ))}
+        </ul>
+      </div>
+
+      <h2>Other credits</h2>
+      <div className="card prose">
+        <ul className="sources">
           <li>
-            Urban / suburban / rural classification: GHSL GHS-SMOD settlement model, European
-            Commission, Joint Research Centre (JRC).
+            Urban / rural classification: GHSL GHS-SMOD settlement model, European Commission,
+            Joint Research Centre (JRC).
             <small>
               Schiavina M., Melchiorri M., Pesaresi M. (2023): GHS-SMOD R2023A — GHS settlement
               layers, application of the Degree of Urbanisation methodology. European Commission,
@@ -100,22 +116,26 @@ export function About({ meta }: { meta: Meta | null }) {
             </small>
           </li>
           <li>
-            Street-level photos:{' '}
-            <a href="https://www.mapillary.com" target="_blank" rel="noopener noreferrer">Mapillary</a>{' '}
-            contributors (CC BY-SA 4.0) and, where enabled, Google Street View (© Google). Both load
-            directly from their services.
+            Exchange rates: European Central Bank reference rates, via the{' '}
+            <a href="https://frankfurter.dev" target="_blank" rel="noopener noreferrer">
+              Frankfurter
+            </a>{' '}
+            API.
           </li>
           <li>
-            Maps: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors.
-            Locations without coordinates are geocoded with Nominatim and postcodes.io.
+            Maps: ©{' '}
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
+              OpenStreetMap
+            </a>{' '}
+            contributors.
           </li>
         </ul>
       </div>
 
       <h2 id="removal">Request removal</h2>
       <p>
-        If a home shown here is yours, or you represent a listing source, tell us and we'll remove it
-        and make sure it never comes back.
+        Owners, agents, photographers and listing sites: tell us which listing or photo, and we'll
+        remove it within 72 hours and make sure it never comes back.
       </p>
       <RemovalForm />
       <a href="#/" className="btn btn-ghost back-link">

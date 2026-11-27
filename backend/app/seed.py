@@ -1,8 +1,10 @@
-"""Load 51 fictional DEMO properties so the game is playable with no scraping or Google key.
+"""Load 51 fictional DEMO properties so the game is playable with no scraping.
 
 Run with `make seed` (or `python -m app.seed` from the repo root). Idempotent: re-running updates
 the same records. Every record belongs to the "demo" source and is clearly labeled as DEMO data.
 Prices, sizes and dates are invented; coordinates are only approximate city/neighborhood points.
+Photos are original placeholder illustrations in frontend/public/demo-photos/ (never real
+listing photos), served by our own site.
 """
 
 import uuid
@@ -13,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.countries import COUNTRIES_BY_CODE
 from app.core.db import SessionLocal
-from app.models import FxRate, Property, Source
+from app.models import FxRate, Property, PropertyImage, Source, utcnow
 
 DEMO_SOURCE_KEY = "demo"
 FX_DATE = date(2020, 1, 1)
@@ -53,9 +55,9 @@ DEMO_PROPERTIES = [
         1_150_000,
         A,
     ),
-    ("US", "Austin", "Texas", 30.4015, -97.7525, "suburban", "house", 210, 4, 3, 2004, 615_000, S),
+    ("US", "Austin", "Texas", 30.4015, -97.7525, "urban", "house", 210, 4, 3, 2004, 615_000, S),
     ("US", "Millersburg", "Ohio", 40.5545, -81.9179, "rural", "house", 160, 3, 2, 1925, 289_000, A),
-    ("US", "Mesa", "Arizona", 33.4152, -111.8315, "suburban", "house", 150, 3, 2, 1998, 445_000, S),
+    ("US", "Mesa", "Arizona", 33.4152, -111.8315, "urban", "house", 150, 3, 2, 1998, 445_000, S),
     (
         "CA",
         "Toronto",
@@ -77,7 +79,7 @@ DEMO_PROPERTIES = [
         "Alberta",
         51.1215,
         -114.0076,
-        "suburban",
+        "urban",
         "house",
         190,
         4,
@@ -122,7 +124,7 @@ DEMO_PROPERTIES = [
         "Jalisco",
         20.7214,
         -103.3918,
-        "suburban",
+        "urban",
         "house",
         220,
         3,
@@ -137,7 +139,7 @@ DEMO_PROPERTIES = [
         "Yucatán",
         21.0400,
         -89.6000,
-        "suburban",
+        "urban",
         "house",
         180,
         3,
@@ -167,7 +169,7 @@ DEMO_PROPERTIES = [
         "Paraná",
         -25.4700,
         -49.2900,
-        "suburban",
+        "urban",
         "house",
         160,
         3,
@@ -192,7 +194,7 @@ DEMO_PROPERTIES = [
         A,
     ),
     ("PT", "Lisbon", "Lisboa", 38.7139, -9.1394, "urban", "apartment", 65, 2, 1, 1940, 520_000, A),
-    ("PT", "Maia", "Porto", 41.2357, -8.6199, "suburban", "house", 180, 4, 3, 2005, 395_000, A),
+    ("PT", "Maia", "Porto", 41.2357, -8.6199, "urban", "house", 180, 4, 3, 2005, 395_000, A),
     ("PT", "Arraiolos", "Évora", 38.7239, -7.9886, "rural", "house", 130, 3, 1, 1900, 145_000, A),
     (
         "ES",
@@ -215,7 +217,7 @@ DEMO_PROPERTIES = [
         "Valencia",
         39.5030,
         -0.4400,
-        "suburban",
+        "urban",
         "townhouse",
         160,
         4,
@@ -260,7 +262,7 @@ DEMO_PROPERTIES = [
         "Greater Manchester",
         53.4160,
         -2.2310,
-        "suburban",
+        "urban",
         "house",
         110,
         3,
@@ -276,7 +278,7 @@ DEMO_PROPERTIES = [
         "West Yorkshire",
         53.8300,
         -1.5800,
-        "suburban",
+        "urban",
         "townhouse",
         90,
         3,
@@ -306,7 +308,7 @@ DEMO_PROPERTIES = [
         "Auvergne-Rhône-Alpes",
         45.7745,
         4.7775,
-        "suburban",
+        "urban",
         "house",
         150,
         4,
@@ -337,7 +339,7 @@ DEMO_PROPERTIES = [
         "Emilia-Romagna",
         44.4800,
         11.2750,
-        "suburban",
+        "urban",
         "house",
         140,
         3,
@@ -368,7 +370,7 @@ DEMO_PROPERTIES = [
         "Lesser Poland",
         49.9870,
         20.0650,
-        "suburban",
+        "urban",
         "house",
         160,
         4,
@@ -399,7 +401,7 @@ DEMO_PROPERTIES = [
         "Split-Dalmatia",
         43.5500,
         16.3500,
-        "suburban",
+        "urban",
         "house",
         180,
         4,
@@ -444,7 +446,7 @@ DEMO_PROPERTIES = [
         "Gauteng",
         -26.0940,
         28.0010,
-        "suburban",
+        "urban",
         "house",
         280,
         4,
@@ -459,7 +461,7 @@ DEMO_PROPERTIES = [
         "KwaZulu-Natal",
         -29.7270,
         31.0850,
-        "suburban",
+        "urban",
         "townhouse",
         150,
         3,
@@ -489,7 +491,7 @@ DEMO_PROPERTIES = [
         "Victoria",
         -37.8190,
         145.1220,
-        "suburban",
+        "urban",
         "house",
         220,
         4,
@@ -534,7 +536,7 @@ DEMO_PROPERTIES = [
         "Canterbury",
         -43.5100,
         172.6000,
-        "suburban",
+        "urban",
         "house",
         160,
         4,
@@ -549,7 +551,7 @@ DEMO_PROPERTIES = [
         "Wellington",
         -41.2100,
         174.9080,
-        "suburban",
+        "urban",
         "house",
         130,
         3,
@@ -579,7 +581,7 @@ DEMO_PROPERTIES = [
         "Osaka",
         34.7810,
         135.4700,
-        "suburban",
+        "urban",
         "house",
         110,
         4,
@@ -625,7 +627,7 @@ DEMO_PROPERTIES = [
         "Taichung",
         24.1800,
         120.6400,
-        "suburban",
+        "urban",
         "townhouse",
         165,
         4,
@@ -651,6 +653,29 @@ DEMO_PROPERTIES = [
     ),
 ]
 
+DEMO_PHOTO_BASE = "/demo-photos/"
+ROOMS = ("room-living.svg", "room-kitchen.svg", "room-bedroom.svg")
+
+
+def demo_photos(i: int, ptype: str, setting: str) -> list[tuple[str, str | None]]:
+    """(filename, kind) for a demo home: a matching exterior, 2-3 rooms, sometimes a floor plan."""
+    if ptype == "apartment":
+        lead = "apartment-tower.svg" if i % 2 else "apartment-block.svg"
+    elif ptype == "townhouse":
+        lead = "townhouse-row.svg"
+    elif ptype == "land":
+        lead = "plot-land.svg"
+    elif setting == "rural":
+        lead = "house-rural.svg"
+    else:
+        lead = "villa.svg" if i % 5 == 0 else "house-suburban.svg"
+    rooms = [ROOMS[(i + k) % 3] for k in range(2 + i % 2)]
+    photos = [(lead, "photo")] + [(r, "photo") for r in rooms]
+    if i % 3 == 0:
+        photos.append(("floorplan.svg", "floorplan"))
+    return photos
+
+
 _NS = uuid.UUID("6b3f0d1e-5a1c-4d55-9a8e-6f2b8f1c0b11")
 
 
@@ -663,6 +688,7 @@ def seed(db: Session, today: date | None = None) -> int:
     src.display_name = "DEMO data (fictional)"
     src.homepage = None
     src.license_note = "Invented sample data for development. Not real sales or listings."
+    src.image_hosts = []  # demo photos are served by our own site
     src.enabled = True
     db.flush()
 
@@ -676,13 +702,13 @@ def seed(db: Session, today: date | None = None) -> int:
         ref = f"demo-{i + 1:03d}"
         pid = str(uuid.uuid5(_NS, ref))
         p = db.get(Property, pid) or Property(id=pid, source_id=src.id, source_ref=ref)
-        p.listing_url = f"https://example.com/demo/{ref}" if ptype2 == A else None
+        p.listing_url = f"https://example.com/demo/{ref}"  # every playable home links back
         p.price_type = ptype2
         p.price_local = price
         p.currency = currency
         p.fx_rate_to_usd = rate
         p.price_usd = round(price * rate, 2)
-        p.price_date = today - timedelta(days=(i * 53) % 1000 + 20)
+        p.price_date = today - timedelta(days=(i * 53) % 600 + 10)  # within MAX_PRICE_AGE_YEARS
         p.country_code = cc
         p.region = region
         p.city = city
@@ -692,8 +718,18 @@ def seed(db: Session, today: date | None = None) -> int:
         p.property_type = ptype
         p.area_m2 = area
         p.bedrooms, p.bathrooms, p.year_built = beds, baths, year
-        p.sv_status = "ok"  # DEMO: no pano_id; the client shows a placeholder image
         p.is_active = True
+        if p.images:  # re-seed: delete old photo rows before inserting the same positions
+            p.images.clear()
+            db.flush()
+        p.images = [
+            PropertyImage(position=pos, url=DEMO_PHOTO_BASE + name, width=1200, height=800,
+                          kind=kind, status="ok")
+            for pos, (name, kind) in enumerate(demo_photos(i, ptype, setting))
+        ]  # fmt: skip
+        p.images_status = "ok"
+        p.images_checked_at = utcnow()
+        p.last_seen_at = utcnow()
         db.add(p)
     db.commit()
     return len(DEMO_PROPERTIES)

@@ -98,11 +98,11 @@ def test_jitter_is_added(server, tmp_path, ft):
     assert ft.sleeps == [4.5]
 
 
-def test_delay_never_below_two_seconds(tmp_path, ft):
+def test_delay_never_below_one_second(tmp_path, ft):
     c = make(tmp_path, ft, default_delay=0.1)
-    assert c.default_delay == MIN_DELAY_S == 2
+    assert c.default_delay == MIN_DELAY_S == 1
     c.set_delay("example.com", 0.5)
-    assert c.delay_for("example.com") == 2
+    assert c.delay_for("example.com") == 1
 
 
 def test_robots_crawl_delay_respected(server, tmp_path, ft):
@@ -201,3 +201,55 @@ def test_robots_403_is_not_logged_as_blocked(server, tmp_path, ft, caplog):
     server.routes["/file.csv"] = (200, "a,b", {})
     assert make(tmp_path, ft).get(f"{server.url}/file.csv").text == "a,b"
     assert "BLOCKED" not in caplog.text
+
+
+def test_image_check_head_ok_and_never_cached(server, tmp_path, ft):
+    server.routes["/p.jpg"] = (200, "JPEGDATA", {"Content-Type": "image/jpeg"})
+    c = make(tmp_path, ft)
+    assert c.check_image(f"{server.url}/p.jpg") is True
+    assert c.check_image(f"{server.url}/p.jpg") is True
+    assert server.paths().count("/p.jpg") == 2  # checked again: image responses are never cached
+    assert (
+        c.cache.get("http", __import__("ingest.cache").cache.hash_key(f"{server.url}/p.jpg"))
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "status,ctype,expected",
+    [(200, "image/png", True), (404, "text/html", False), (200, "text/html", False),
+     (500, "image/jpeg", False)],
+)  # fmt: skip
+def test_image_check_results(server, tmp_path, ft, status, ctype, expected):
+    server.routes["/x"] = (status, "body", {"Content-Type": ctype})
+    assert make(tmp_path, ft).check_image(f"{server.url}/x") is expected
+
+
+def test_image_check_obeys_robots_on_image_host(server, tmp_path, ft):
+    server.routes["/robots.txt"] = (200, "User-agent: *\nDisallow: /photos/\n", {})
+    server.routes["/photos/1.jpg"] = (200, "x", {"Content-Type": "image/jpeg"})
+    with pytest.raises(RobotsDisallowed):
+        make(tmp_path, ft).check_image(f"{server.url}/photos/1.jpg")
+    assert "/photos/1.jpg" not in server.paths()
+
+
+def test_image_check_stops_on_403(server, tmp_path, ft):
+    server.routes["/hot.jpg"] = (403, "no hotlinking", {})
+    with pytest.raises(SourceBlocked):
+        make(tmp_path, ft).check_image(f"{server.url}/hot.jpg")
+
+
+def test_image_check_unreachable_host(tmp_path, ft):
+    # robots.txt can't be read -> treated as disallow-all -> the pipeline marks the photo broken
+    with pytest.raises(RobotsDisallowed):
+        make(tmp_path, ft).check_image("https://nonexistent.invalid/a.jpg")
+    assert make(tmp_path, ft).check_image("ftp://x/a.jpg") is False
+
+
+def test_image_hosts_get_one_second_delay(server, tmp_path, ft):
+    server.routes["/a.jpg"] = (200, "x", {"Content-Type": "image/jpeg"})
+    server.routes["/b.jpg"] = (200, "x", {"Content-Type": "image/jpeg"})
+    c = make(tmp_path, ft)
+    c.check_image(f"{server.url}/a.jpg")
+    c.check_image(f"{server.url}/b.jpg")
+    assert ft.sleeps[-1] == 1.0

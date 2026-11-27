@@ -3,6 +3,7 @@ from collections import Counter
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import select
 
 from app.core.selection import (
     Candidate,
@@ -11,7 +12,7 @@ from app.core.selection import (
     pick_rounds,
     price_quintiles,
 )
-from app.models import Blocklist, Property, Source
+from app.models import Blocklist, PhotoReport, Property, PropertyImage, Source
 
 TODAY = date(2026, 6, 1)
 
@@ -22,7 +23,7 @@ def make_pool(countries=("FR", "GB", "JP", "US", "BR", "AU"), cities=4, per_city
         for ci in range(cities):
             for k in range(per_city):
                 i += 1
-                setting = "urban" if (ci + k) % 2 else "suburban"
+                setting = "urban" if (ci + k) % 2 else "rural"
                 price = 20_000 * (1.6 ** (i % 13))
                 pool.append(Candidate(f"p{i:04d}", cc, f"{cc}-city{ci}", setting, price))
     return pool
@@ -32,7 +33,7 @@ def make_pool(countries=("FR", "GB", "JP", "US", "BR", "AU"), cities=4, per_city
 def test_world_rules(seed):
     pool = make_pool()
     picks = pick_rounds(
-        pool, rng=random.Random(seed), min_pool_per_country=1, setting_filter="suburban,urban"
+        pool, rng=random.Random(seed), min_pool_per_country=1, setting_filter="rural,urban"
     )
     assert len(picks) == 5
     assert len({p.id for p in picks}) == 5
@@ -41,7 +42,7 @@ def test_world_rules(seed):
     q = price_quintiles(pool)
     assert len({q[p.id] for p in picks}) >= 3  # price-band spread
     s = Counter(p.setting for p in picks)
-    assert s["urban"] >= 2 and s["suburban"] >= 2
+    assert s["urban"] >= 2 and s["rural"] >= 2
 
 
 def test_deterministic_with_seeded_rng():
@@ -102,32 +103,26 @@ def test_pool_too_small():
 
 def test_urban_only_filter_returns_only_requested(db):
     _make_db_pool(db)
-    cands = load_candidates(db, today=TODAY, max_age_years=5, setting_filter="urban")
+    cands = load_candidates(db, today=TODAY, max_age_years=2, setting_filter="urban")
     assert cands and all(c.setting == "urban" for c in cands)
 
 
-def _prop(src, ref, **kw):
+def _prop(src, ref, n_photos=3, broken=0, **kw):
     base = dict(
-        source_id=src.id,
-        source_ref=ref,
-        price_type="sale_record",
-        price_local=300_000,
-        currency="EUR",
-        price_usd=324_000,
-        fx_rate_to_usd=1.08,
-        price_date=TODAY - timedelta(days=30),
-        country_code="FR",
-        city="Lyon",
-        lat=45.76,
-        lng=4.83,
-        location_precision="exact",
-        setting="urban",
-        property_type="house",
-        sv_status="ok",
-        is_active=True,
-    )
+        source_id=src.id, source_ref=ref, listing_url=f"https://listings.test/{ref}",
+        price_type="asking", price_local=300_000, currency="EUR", price_usd=324_000,
+        fx_rate_to_usd=1.08, price_date=TODAY - timedelta(days=30), country_code="FR",
+        city="Lyon", lat=45.76, lng=4.83, location_precision="exact", setting="urban",
+        property_type="house", images_status="ok", is_active=True,
+    )  # fmt: skip
     base.update(kw)
-    return Property(**base)
+    p = Property(**base)
+    p.images = [
+        PropertyImage(position=i, url=f"https://img.test/{ref}/{i}.jpg",
+                      status="broken" if i < broken else "ok")
+        for i in range(n_photos)
+    ]  # fmt: skip
+    return p
 
 
 def _make_db_pool(db):
@@ -136,22 +131,27 @@ def _make_db_pool(db):
     db.flush()
     props = {
         "good": _prop(src, "good"),
-        "good_sub": _prop(src, "good_sub", setting="suburban"),
-        "street": _prop(src, "street", location_precision="street"),
+        "rural": _prop(src, "rural", setting="rural"),
+        "approx": _prop(src, "approx", location_precision="approximate"),
+        "two_photos": _prop(src, "two_photos", n_photos=2),
+        "one_photo": _prop(src, "one_photo", n_photos=1),
+        "two_broken": _prop(src, "two_broken", n_photos=3, broken=2),
+        "img_broken": _prop(src, "img_broken", images_status="broken"),
+        "img_unchecked": _prop(src, "img_unchecked", images_status="unchecked"),
+        "no_url": _prop(src, "no_url", listing_url=None),
         "inactive": _prop(src, "inactive", is_active=False),
-        "no_sv": _prop(src, "no_sv", sv_status="none"),
-        "unchecked": _prop(src, "unchecked", sv_status="unchecked"),
-        "district": _prop(src, "district", location_precision="district"),
         "cheap": _prop(src, "cheap", price_usd=4_999),
         "pricey": _prop(src, "pricey", price_usd=100_000_001),
-        "old": _prop(src, "old", price_date=TODAY - timedelta(days=365 * 5 + 5)),
-        "rural": _prop(src, "rural", setting="rural"),
-        "unknown": _prop(src, "unknown", setting="unknown"),
+        "old": _prop(src, "old", price_date=TODAY - timedelta(days=365 * 2 + 5)),
+        "unknown": _prop(src, "unknown", setting="unknown", lat=None, lng=None),
         "foreign": _prop(src, "foreign", country_code="DE"),
         "blocked": _prop(src, "blocked"),
+        "reported": _prop(src, "reported"),
     }
     db.add_all(props.values())
     db.add(Blocklist(source_id=src.id, source_ref="blocked"))
+    db.flush()
+    db.add(PhotoReport(property_id=props["reported"].id, position=0, reason="price_visible"))
     db.commit()
     return {k: v.id for k, v in props.items()}
 
@@ -160,83 +160,54 @@ def test_eligibility_filters(db):
     ids = _make_db_pool(db)
     got = {
         c.id
-        for c in load_candidates(db, today=TODAY, max_age_years=5, setting_filter="suburban,urban")
+        for c in load_candidates(db, today=TODAY, max_age_years=2, setting_filter="rural,urban")
     }
-    # Imageless homes are playable by default (illustrated card), whatever their image checks say.
-    assert got == {ids[k] for k in ("good", "good_sub", "street", "no_sv", "unchecked")}
+    assert got == {ids[k] for k in ("good", "rural", "approx", "two_photos")}
 
 
-def test_eligibility_requires_an_image_when_imageless_disabled(db, monkeypatch):
-    from app.core.config import get_settings
-
-    monkeypatch.setattr(get_settings(), "allow_imageless_rounds", False)
-    monkeypatch.setattr(get_settings(), "mapillary_token", "MLY|t")  # a photo source exists
+def test_dismissed_report_returns_home_to_play(db):
     ids = _make_db_pool(db)
-    p = {k: db.get(Property, v) for k, v in ids.items()}
-    p["good"].pano_id = "PANO"  # sv ok + pano
-    p["good_sub"].image_url = "https://img.example/1.jpg"  # listing photo
-    p["street"].sv_status = "none"
-    p["street"].mly_status, p["street"].mly_image_id = "ok", "123"  # Mapillary
-    p["unchecked"].mly_status = "ok"  # ok but no id -> no image
+    rep = db.execute(select(PhotoReport)).scalar_one()
+    rep.status = "dismissed"
     db.commit()
-    got = {
-        c.id: c.has_image
-        for c in load_candidates(db, today=TODAY, max_age_years=5, setting_filter="suburban,urban")
-    }
-    assert got == {ids["good"]: True, ids["good_sub"]: True, ids["street"]: True}
-
-
-def test_prefers_homes_with_images():
-    pool = [
-        Candidate(c.id, c.country_code, c.city, c.setting, c.price_usd, has_image=i % 4 == 0)
-        for i, c in enumerate(make_pool())
-    ]
-    picks = [
-        p
-        for s in range(30)
-        for p in pick_rounds(pool, rng=random.Random(s), setting_filter="suburban,urban")
-    ]
-    assert sum(p.has_image for p in picks) >= 120  # of 150 picks; only 25% of the pool has one
+    got = {c.id for c in load_candidates(db, today=TODAY, max_age_years=2,
+                                         setting_filter="rural,urban")}  # fmt: skip
+    assert ids["reported"] in got
 
 
 def test_scope_filters(db):
     _make_db_pool(db)
-    assert (
-        load_candidates(
-            db,
-            today=TODAY,
-            max_age_years=5,
-            setting_filter="suburban,urban",
-            where_scope="country",
-            where_value="JP",
-        )
-        == []
-    )
-    assert (
-        len(
-            load_candidates(
-                db,
-                today=TODAY,
-                max_age_years=5,
-                setting_filter="suburban,urban",
-                where_scope="region",
-                where_value="europe",
-            )
-        )
-        == 5
-    )
+    assert load_candidates(db, today=TODAY, max_age_years=2, setting_filter="rural,urban",
+                           where_scope="country", where_value="JP") == []  # fmt: skip
+    assert len(load_candidates(db, today=TODAY, max_age_years=2, setting_filter="rural,urban",
+                               where_scope="region", where_value="europe")) == 4  # fmt: skip
 
 
-@pytest.mark.parametrize("seed", range(20))
-def test_three_settings_get_one_of_each(seed):
+def test_at_most_three_per_source():
     pool = [
-        Candidate(c.id, c.country_code, c.city, ("urban", "suburban", "rural")[i % 3], c.price_usd)
+        Candidate(c.id, c.country_code, c.city, c.setting, c.price_usd, source_id=i % 2)
         for i, c in enumerate(make_pool())
     ]
-    picks = pick_rounds(
-        pool, rng=random.Random(seed), min_pool_per_country=1, setting_filter="rural,suburban,urban"
-    )
-    assert {p.setting for p in picks} == {"urban", "suburban", "rural"}
+    for s in range(30):
+        picks = pick_rounds(pool, rng=random.Random(s), min_pool_per_country=1)
+        assert max(Counter(p.source_id for p in picks).values()) <= 3
+
+
+def test_single_source_pool_still_works():
+    picks = pick_rounds(make_pool(), rng=random.Random(1))
+    assert len(picks) == 5
+
+
+def test_recently_verified_preference():
+    from datetime import datetime
+
+    from app.core.selection import recently_verified
+
+    now = datetime(2026, 6, 1, 12)
+    fresh = Candidate("a", "FR", "x", "urban", 1e5, images_checked_at=now - timedelta(hours=5))
+    stale = Candidate("b", "FR", "y", "urban", 1e5, images_checked_at=now - timedelta(hours=60))
+    never = Candidate("c", "FR", "z", "urban", 1e5)
+    assert recently_verified([fresh, stale, never], now) == [fresh]
 
 
 def test_encode_settings():
@@ -244,6 +215,6 @@ def test_encode_settings():
 
     assert encode_settings(["urban", "rural", "urban"]) == "rural,urban"
     assert decode_settings("rural,urban") == ("rural", "urban")
-    for bad in ([], ["beach"]):
+    for bad in ([], ["suburban"], ["beach"]):
         with pytest.raises(ValueError):
             encode_settings(bad)

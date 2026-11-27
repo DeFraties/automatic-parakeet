@@ -6,13 +6,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core import quota
 from app.core.config import ROUNDS_PER_GAME, get_settings
 from app.core.countries import COUNTRIES, REGIONS, countries_in_region
-from app.core.daily import daily_number
+from app.core.daily import daily_number, utc_today
 from app.core.db import get_db
-from app.core.images import imageless_allowed, photo_sources
-from app.core.photo_checker import pending_count
 from app.core.selection import ALL_SETTINGS, DEFAULT_SETTINGS, eligible_counts
 from app.models import Source
 
@@ -75,20 +72,16 @@ def meta(db: Session = Depends(get_db)) -> dict:
                 "display_name": src.display_name,
                 "homepage": src.homepage,
                 "license_note": src.license_note,
+                "image_hosts": src.image_hosts or [],
             }
             for src in sources
         ],
-        "daily_number": daily_number(quota.utc_today(), s.launch_date),
+        "daily_number": daily_number(utc_today(), s.launch_date),
         "settings": {"all": list(ALL_SETTINGS), "default": list(DEFAULT_SETTINGS)},
-        "tile_url": s.tile_url,
+        "tile_url": s.osm_tile_url,
         "tile_attribution": s.tile_attribution,
-        "streetview_enabled": quota.google_enabled(),
-        "photo_sources": photo_sources(),
-        "photos_required": not imageless_allowed(),
-        "photo_check_pending": pending_count(db) if s.mapillary_token else 0,
         "min_pool_per_option": mp,
         "rounds_per_game": ROUNDS_PER_GAME,
         "public_base_url": s.public_base_url,
         "contact_email": s.contact_email,
-        "quota": quota.status(db),
     }

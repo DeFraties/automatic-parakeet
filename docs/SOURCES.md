@@ -1,140 +1,161 @@
-# Data sources
+# Listing sources
 
-How Ballpark gets property data, how to add a new source, and the compliance checklist every
-source must pass first. The hard rules are in [GDD §12](GDD.md#12-compliance-rules-hard-requirements).
+All property data (price, facts, location and photos) comes from **listing sites the owner
+chooses**, one at a time (GDD Phase 5). This guide has the compliance checklist every source must
+pass before it's enabled, and a walkthrough of the example plugin to copy.
+
+The hard rules are in [GDD §12](GDD.md#12-compliance-rules-hard-requirements). In short:
+photos are **hotlinked only**, shown exactly as published, always credited and linked back; no
+personal data; polite scraping with **no circumvention of anything**, including hotlink
+protection; no Google and no geocoding.
 
 ## Enabled sources
 
-| Key | Source | Countries | Price type | Licence / terms |
+| Key | Site | Countries | Image hosts | Status |
 |---|---|---|---|---|
-| `uk_price_paid` | [HM Land Registry Price Paid Data](https://www.gov.uk/government/collections/price-paid-data) | GB (England & Wales) | `sale_record` | Open Government Licence v3.0 — attribution required |
-| `example_html` | Fixture site in `backend/tests/fixtures/` (reference only, **disabled**) | PT, HR | `asking` | n/a (shows how to return a photo URL) |
-| `demo` | Invented DEMO data loaded by `make seed` (not a plugin) | all 16 | both | n/a |
+| `example_html` | Fictional fixture pages in `backend/tests/fixtures/` | PT, HR | `images.example.test` | reference only, **disabled** |
+| `demo` | 51 invented homes from `make seed` (not a plugin) | all 16 | our own site (`/demo-photos/`) | development |
 
-Required attribution text is stored in each plugin's `license_note` and copied to the `sources`
-table on every run, so the About page (Phase 3) can list it.
+## Checklist — every item before `enabled: true`
 
-## Compliance checklist (every new plugin must pass ALL of these)
+Copy this into the plugin's pull request. If any box can't be ticked, the source isn't added.
 
-Copy this list into the plugin's pull request and tick each item. If any box can't be ticked,
-the source is not added.
+- [ ] **The owner has read the site's terms of use and robots.txt**, and robots.txt allows the
+      listing pages, the search/discovery pages **and the image paths** on its image hosts for
+      the `BallparkBot` User-Agent.
+- [ ] **Works logged out**, with no challenge pages (Cloudflare, CAPTCHA). If the site
+      challenges us, the plugin stops (`SourceBlocked`) and we don't work around it.
+- [ ] **Delay ≥ 5 s for pages** (`delay_seconds`), ≥ 1 s for image checks
+      (`image_delay_seconds`). A longer robots.txt `Crawl-delay` wins.
+- [ ] **Only schema fields are extracted**: facts, photo URLs and the listing's *own*
+      coordinates (`NormalizedListing` / `NormalizedImage`). No descriptions, no agent, owner or
+      photographer names, phone numbers or emails, no street addresses, no image files.
+- [ ] **`image_hosts` set correctly** in `sources.yaml` (and the plugin's default). Photo URLs on
+      any other host are rejected at ingestion and blocked by the CSP. HTTPS only.
+- [ ] **Photos are URLs the site publishes**: in the listing's order, the largest size the site
+      already serves that is ≤ ~1600 px wide. Never request sizes the site doesn't publish,
+      never download, resize, crop or re-host, never strip watermarks.
+- [ ] **No single price → skip** ("price on request", auctions without a guide). Ranges are
+      skipped unless `allow_price_range_midpoint: true`. Rentals are flagged (`is_rental`).
+- [ ] **Credit line and link back working**: "Photos: {display_name}" under the carousel, and
+      `listing_url` opens the original listing from the reveal screen.
+- [ ] **The site is added to the About page** (it appears automatically once enabled; check the
+      name and homepage link).
+- [ ] **Tests** against saved fixture pages (no live requests in tests), including a check that
+      descriptions/contact details on the fixture never reach the database.
+- [ ] **Kill switch tested**: `enabled: false` + `python -m ingest deactivate --source <key>`
+      removes it from play immediately.
 
-- [ ] **Licence / terms checked.** The site's terms of use allow this use, or the data is
-      published under an open licence. The licence and any required attribution text are recorded
-      in the plugin's `license_note`.
-- [ ] **robots.txt allows the paths** the plugin fetches, for the `BallparkBot` User-Agent
-      (`discover()` and `fetch_and_parse()` URLs). PoliteClient enforces this at runtime, but
-      check by hand first. If the paths are disallowed, the source can't be added.
-- [ ] **Logged-out access only.** Every URL works in a private browser window with no account,
-      cookie banner acceptance, API key the site didn't issue to us, or paywall.
-- [ ] **No CAPTCHA, Cloudflare/bot challenge or similar** on the pages. If the site challenges
-      us, the plugin stops (`SourceBlocked`) and we do not work around it.
-- [ ] **All HTTP goes through `PoliteClient`** (`client.get` / `client.download`). No direct
-      `httpx`/`requests` calls, no custom headers, no proxies, no headless browser (Playwright
-      only for sites that render with JavaScript *and* allow crawling, and only after discussion).
-- [ ] **Delay ≥ 2 s** per domain (`delay_seconds` in `sources.yaml`; default 5 s). Honour any
-      longer `Crawl-delay`.
-- [ ] **Facts only, no personal data.** The plugin returns `NormalizedListing` and nothing else.
-      It never keeps descriptions, agent/owner names, phone numbers, emails or street addresses
-      (the dataclass has no fields for them).
-- [ ] **Photos as a URL only.** If the source has photos, the plugin may set `image_url` to the
-      main photo's absolute URL **on the source**. It must never download, resize or re-host the
-      image. Prefer the photo of the outside of the home, and never use one of a person. Decide
-      deliberately whether to show this source's photos at all: set `photos: false` in
-      `sources.yaml` if the site's terms forbid it or the owner prefers not to (photo use was
-      allowed by the owner on 2026-11-27, accepting the copyright risk; see GDD §12 rule 1).
-- [ ] **Coordinates from the source or an open geocoder** (Nominatim / postcodes.io), never Google.
-      `location_precision` is set honestly: `exact` (building), `street`, or `district`.
-- [ ] **Link-back implemented**: `listing_url` points to the original listing or record when one
-      exists (it's only shown on the reveal screen).
-- [ ] **Attribution added** (`license_note`) if the licence requires it.
-- [ ] **Sane volume**: `max_records_per_run` set to what's needed, not "everything".
-- [ ] **Tests** against a saved fixture page (no live requests in tests), including a check that
-      non-fact content on the fixture page doesn't end up in the database.
-- [ ] **Removal works**: `source_ref` is stable, so blocklisting a record keeps it out for good.
+## How to write a plugin — walkthrough of `example_html`
 
-## How to write a plugin
+Files: `backend/ingest/sources/example_html.py` and the fixtures
+`backend/tests/fixtures/example_search.html`, `example_listing.html`, `example_listing_2.html`.
+Try it locally:
 
-1. **Save fixtures.** Save one or two listing pages (and an index/search page if `discover()`
-   needs one) into `backend/tests/fixtures/<source_key>/`. Replace any personal data in them with
-   fake values.
+```bash
+python -m http.server 8099 -d backend/tests/fixtures      # terminal 1: the fake site
+backend/.venv/bin/python -m ingest run --source example_html   # terminal 2
+backend/.venv/bin/python -m ingest stats --by source,images
+```
 
-2. **Write the plugin** in `backend/ingest/sources/<source_key>.py`. Start from
-   `example_html.py`:
+(Its photo URLs point at the fictional `images.example.test`, so a live run marks them broken.
+The tests use a stub image checker instead.)
 
+1. **Plugin metadata.**
    ```python
-   class MySource(SourcePlugin):
-       key = "my_source"
-       display_name = "My Source"
-       homepage = "https://…"
-       price_type = "asking"           # or "sale_record"
-       country_codes = ["ES"]
-       license_note = None              # or the attribution the licence requires
-
-       def discover(self, client, settings):
-           """Yield listing URLs or record IDs. Fetch index pages with client.get()."""
-
-       def fetch_and_parse(self, client, ref):
-           """Fetch one listing with client.get(ref) and return NormalizedListing, or None."""
+   class ExampleHtml(SourcePlugin):
+       key = "example_html"
+       display_name = "Example Listings (fixture)"   # shown as "Photos: …" and on About
+       homepage = "http://127.0.0.1:8099/"
+       price_type = "asking"
+       country_codes = ["PT", "HR"]
+       image_hosts = ["images.example.test"]
    ```
 
-   - Parse prices with `normalize.parse_price()` (handles `€ 340.000`, `R$ 1.050.000`,
-     `3,800万円`, `$1.2M`…), areas with `parse_area()` (m², ft², sqm…) and types with
-     `normalize_property_type()`.
-   - Return `None` for anything you can't parse confidently. The pipeline counts skips.
-   - Don't convert currencies. Return the source's own currency; the pipeline handles FX
-     (and HRK → EUR).
-   - If the source has no coordinates, use `self.ctx.geocoder.geocode_address(...)` and keep the
-     address only in local variables.
+2. **`discover()`**: fetch a search-results page with `client.get(...)` (never `httpx`
+   directly) and yield listing URLs. `example_search.html` has `a.result-link` elements; real
+   sites usually also have pagination (`a[rel=next]`). Respect `max_records_per_run`.
 
-3. **Register it** in `backend/ingest/sources/__init__.py` (`PLUGINS`).
+3. **`fetch_and_parse()`, JSON first.** Most sites embed the listing as JSON
+   (`<script type="application/json">`, `__NEXT_DATA__`, JSON-LD). `example_listing.html` has
+   `script#listing-data`. Read only the fields you need: id, price, type, area, rooms, year,
+   city/region/country, `geo` and `photos`. The same blob also contains `agent`,
+   `description` and `address.street`: **ignore them**.
 
-4. **Configure it** in `backend/ingest/sources.yaml`, starting with `enabled: false`:
+4. **HTML fallback.** `example_listing_2.html` has no JSON: read `.price`, `.facts li`,
+   `.locality[data-city]`, the map widget's `data-lat`/`data-lng`, and `.gallery img`.
 
+5. **Normalize.**
+   - Price: `parse_price(text, default_currency, allow_range_midpoint=…)` handles `€ 340.000`,
+     `R$ 1.050.000`, `3,800万円`, `1,280萬` (pass `"TWD"` as the default), `$1.2M`. It returns
+     `None` for "price on request" and ranges, so return `None` too (the listing is skipped).
+   - Prices in HRK are fine: the pipeline converts kuna to euro at 7.53450.
+   - Area: `parse_area("1,615 sq ft")` → 150.0 m².
+   - Type: `normalize_property_type("Apartamento")` → `apartment`.
+   - `price_date`: the sold date if the listing shows one (`price_type="sale_record"`),
+     otherwise today (the pipeline keeps the first-scraped date while the price is unchanged).
+
+6. **Coordinates: only the listing's own.** From the JSON or the site's map widget. If the site
+   blurs them (many do), set `location_precision="approximate"`. If there are none, leave
+   `lat`/`lng` as `None`: the home is stored but not playable (setting `unknown`). **Never call a
+   geocoder.**
+
+7. **Photos.** Build `NormalizedImage(url, width, height, kind)` in the listing's order, absolute
+   `https://` URLs on your `image_hosts`. If the site offers size variants
+   (`data-src` 800 px / `data-src-large` 1600 px), pick the largest published ≤ 1600 px. Label
+   floor plans `kind="floorplan"` when the site does (they're shown last). At least 2 photos are
+   required.
+
+8. **Register** it in `backend/ingest/sources/__init__.py` and **configure** it in
+   `backend/ingest/sources.yaml` with `enabled: false`:
    ```yaml
-   my_source:
+   my_site:
      enabled: false
      delay_seconds: 5
+     image_delay_seconds: 1
      max_records_per_run: 50
-     # anything else here is passed to discover() as `settings`
+     image_hosts: ["img.my-site.example"]
+     allow_price_range_midpoint: false
    ```
 
-5. **Test it** (`backend/tests/test_ingest_<source_key>.py`) by serving the fixtures with the
-   `fixture_site`/`server` pytest fixtures (a local HTTP server) and running `run_source`. See
-   `test_ingest_example_html.py`.
+9. **Test** with saved fixture pages and the `fixture_site` pytest fixture (a local HTTP server),
+   as in `backend/tests/test_ingest_example_html.py`. Assert prices, coordinates, photo order,
+   and that no description or contact details were stored.
 
-6. **Tick the checklist**, enable the source, and do a small first run:
+10. **Tick the checklist, enable, do a small first run**, then regenerate the CSP:
+    ```bash
+    make ingest ARGS="run --source my_site --limit 10"
+    make ingest ARGS="stats --by source,images"
+    make csp      # adds the new image_hosts to the Content-Security-Policy (make up does this too)
+    ```
 
-   ```bash
-   backend/.venv/bin/python -m ingest run --source my_source --limit 10
-   backend/.venv/bin/python -m ingest stats --by source,country
-   ```
+## What the pipeline does with every listing
 
-## What the pipeline does for every record
+`discover` → blocklist check → `fetch_and_parse` → launch-country whitelist → HRK→EUR → FX to
+USD at `price_date` → validation (price $5k–$100M, area 10–50,000 m², $50–$100k per m², rent
+check, ≥ 2 photos, photo hosts allowed, listing URL present) → urban/rural from GHSL (needs the
+listing's coordinates) → upsert on `(source, source_ref)` → photo URLs stored (≤ 10) and
+verified (`HEAD`, image/*) → cross-source duplicate kept out of the pool. Each run writes an
+`ingest_runs` row. A home is playable once it has ≥ 2 working photos.
 
-`discover` → (blocklist check) → `fetch_and_parse` → launch-country whitelist → HRK→EUR →
-FX to USD at `price_date` → validation (price $5k–$100M, area 10–50,000 m², $50–$100k per m²,
-…) → GHSL urban/suburban/rural classification → upsert on `(source, source_ref)` → flag possible
-cross-source duplicates (≤ 15 m apart and ≤ 2% price difference). Each run writes a row to
-`ingest_runs` with counts and rejection reasons. New records start with `sv_status='unchecked'`
-and aren't playable until the Street View check (Phase 3) marks them `ok`.
+Afterwards:
+- `ingest images-check` re-verifies unchecked or stale photo URLs.
+- `ingest refresh` (daily) re-fetches listings not seen for 14 days: delisted → inactive, photos
+  re-checked; asking listings gone 30+ days are deleted with their photo URLs.
 
 ## When a source blocks us
 
-A 403, a 429 or a challenge page stops that source's run immediately. It's logged as `BLOCKED`
-and the run is recorded with `status='blocked'`. Records saved before the block are kept. The
-source isn't retried until its next scheduled run. If it keeps happening, disable the source;
-don't work around it.
+A 403, 429 or challenge page (pages **or** images) stops that source's run immediately; it's
+logged as `BLOCKED` and recorded with `status='blocked'`. Records saved before the block are
+kept. Don't retry until the next scheduled run; if it keeps happening, disable the source. Never
+work around it: no proxies, header spoofing, headless browsers or referrer tricks.
 
-## Removal requests and takedowns
+## Removals and reports
 
-- One home: `python -m ingest remove --property-id <uuid> [--request N]` deactivates and
-  blocklists it, so it's never re-ingested.
-- A whole source: `python -m ingest deactivate --source KEY`, then `enabled: false` in
-  `sources.yaml`.
-- **Photos only** (e.g. a photographer or agency objects): `python -m ingest strip-photos
-  --source KEY` forgets every photo link from that source at once. Also set `photos: false`
-  for it in `sources.yaml` so the next run doesn't bring them back. For a single home, use
-  `remove`.
-
-Target: act within 72 hours of a request (`python -m ingest removals` lists pending ones).
+- **Removal requests** (About page form): `python -m ingest removals`, then
+  `python -m ingest remove --property-id <uuid> --request <#>`. That deactivates the home,
+  deletes its photo URLs and blocklists it. Act within 72 hours.
+- **Player photo reports**: `python -m ingest reports`. A `price_visible` report removes the home
+  from play until handled: `--resolve <#> --action dismiss|drop-photo|remove`.
+- **Whole source**: set `enabled: false` in `sources.yaml` and run
+  `python -m ingest deactivate --source <key>`.

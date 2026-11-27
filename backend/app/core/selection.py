@@ -4,17 +4,18 @@ import math
 import random
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import ELIGIBLE_USD_MAX, ELIGIBLE_USD_MIN, ROUNDS_PER_GAME
+from app.core.config import ELIGIBLE_USD_MAX, ELIGIBLE_USD_MIN, ROUNDS_PER_GAME, get_settings
 from app.core.countries import COUNTRY_CODES, countries_in_region
+from app.core.photos import ok_photo_count, open_price_report
 from app.models import Blocklist, Property
 
-ALL_SETTINGS: tuple[str, ...] = ("urban", "suburban", "rural")
-# Owner decision (Phase 3): default games are urban + rural; players toggle settings on/off.
+# Owner decision (2026-11-27): two neighbourhood categories. Suburbs count as urban.
+ALL_SETTINGS: tuple[str, ...] = ("urban", "rural")
 DEFAULT_SETTINGS: tuple[str, ...] = ("urban", "rural")
 
 
@@ -33,8 +34,9 @@ def decode_settings(encoded: str) -> tuple[str, ...]:
 DEFAULT_SETTING_FILTER = encode_settings(DEFAULT_SETTINGS)
 
 MAX_PER_COUNTRY = 2
+MAX_PER_SOURCE = 3
 MIN_QUINTILES = 3
-MIN_EACH_SETTING = 2  # with two settings selected: >= 2 rounds of each (>= 1 each with three)
+MIN_EACH_SETTING = 2  # with both settings selected: >= 2 rounds of each
 ATTEMPTS_PER_LEVEL = 200
 
 
@@ -49,16 +51,8 @@ class Candidate:
     city: str
     setting: str
     price_usd: float
-    has_image: bool = False
-
-
-def has_image_clause():
-    """A home with some photo: listing photo, checked Mapillary image or Street View panorama."""
-    return or_(
-        Property.image_url.is_not(None),
-        and_(Property.mly_status == "ok", Property.mly_image_id.is_not(None)),
-        and_(Property.sv_status == "ok", Property.pano_id.is_not(None)),
-    )
+    source_id: int = 0
+    images_checked_at: datetime | None = None
 
 
 def _years_ago(today: date, years: int) -> date:
@@ -71,22 +65,22 @@ def _years_ago(today: date, years: int) -> date:
 def eligibility_clauses(
     today: date, max_age_years: int, setting_filter: str = DEFAULT_SETTING_FILTER
 ):
-    """SQLAlchemy WHERE clauses for a playable property."""
+    """SQLAlchemy WHERE clauses for a playable property (Section 5.3)."""
     blocked = exists().where(
         and_(Blocklist.source_id == Property.source_id, Blocklist.source_ref == Property.source_ref)
     )
-    from app.core.images import imageless_allowed
-
-    clauses = [] if imageless_allowed() else [has_image_clause()]
-    return clauses + [
+    return [
         Property.is_active.is_(True),
+        Property.images_status == "ok",
+        ok_photo_count() >= get_settings().min_ok_photos,
+        Property.listing_url.is_not(None),
         Property.country_code.in_(sorted(COUNTRY_CODES)),
-        Property.location_precision.in_(("exact", "street")),
         Property.price_usd >= ELIGIBLE_USD_MIN,
         Property.price_usd <= ELIGIBLE_USD_MAX,
         Property.price_date >= _years_ago(today, max_age_years),
         Property.setting.in_(decode_settings(setting_filter)),
         ~blocked,
+        ~open_price_report(),
     ]
 
 
@@ -118,14 +112,15 @@ def load_candidates(
             Property.city,
             Property.setting,
             Property.price_usd,
-            has_image_clause(),
+            Property.source_id,
+            Property.images_checked_at,
         ).where(*clauses)
     ).all()
-    return [Candidate(*r[:5], has_image=bool(r[5])) for r in rows]
+    return [Candidate(*r) for r in rows]
 
 
 def eligible_counts(db: Session, *, today: date, max_age_years: int) -> dict[str, dict[str, int]]:
-    """{country_code: {"urban": n, "suburban": n, "rural": n}} for all playable properties."""
+    """{country_code: {"urban": n, "rural": n}} for all playable properties."""
     rows = db.execute(
         select(Property.country_code, Property.setting, func.count())
         .where(*eligibility_clauses(today, max_age_years, encode_settings(ALL_SETTINGS)))
@@ -144,10 +139,17 @@ def price_quintiles(cands: list[Candidate]) -> dict[str, int]:
     return {c.id: min(4, i * 5 // n) for i, c in enumerate(ordered)} if n else {}
 
 
+def recently_verified(cands: list[Candidate], now: datetime, hours: int = 48) -> list[Candidate]:
+    """Daily Challenge preference: photos verified in the last 48 hours (Section 5.4)."""
+    cutoff = now - timedelta(hours=hours)
+    return [c for c in cands if c.images_checked_at and c.images_checked_at >= cutoff]
+
+
 @dataclass(frozen=True)
 class _Rules:
     unique_city: bool = True
     country_cap: bool = True
+    source_cap: bool = True
     quintile_spread: bool = True
     setting_mix: bool = True
 
@@ -157,8 +159,9 @@ _RELAXATION = (
     _Rules(),
     _Rules(setting_mix=False),
     _Rules(setting_mix=False, quintile_spread=False),
-    _Rules(setting_mix=False, quintile_spread=False, unique_city=False),
-    _Rules(setting_mix=False, quintile_spread=False, unique_city=False, country_cap=False),
+    _Rules(setting_mix=False, quintile_spread=False, source_cap=False),
+    _Rules(setting_mix=False, quintile_spread=False, source_cap=False, unique_city=False),
+    _Rules(False, False, False, False, False),
 )
 
 
@@ -193,41 +196,42 @@ def pick_rounds(
 
     cities_in_pool = len({(c.country_code, c.city) for c in cands})
     selected = decode_settings(setting_filter)
-    per_setting = MIN_EACH_SETTING if len(selected) == 2 else 1
+    # The per-source cap only makes sense when enough sources exist to satisfy it.
+    sources_ok = len({c.source_id for c in cands}) * MAX_PER_SOURCE >= n
 
     for rules in _RELAXATION:
-        enforce_city = rules.unique_city and not (where_scope == "country" and cities_in_pool < n)
-        enforce_cap = rules.country_cap and world
+        caps = _Caps(
+            city=rules.unique_city and not (where_scope == "country" and cities_in_pool < n),
+            country=rules.country_cap and world,
+            source=rules.source_cap and sources_ok,
+        )
         need_quint = rules.quintile_spread and pool_quintiles >= MIN_QUINTILES
         need_mix = (
             rules.setting_mix
             and len(selected) > 1
-            and all(settings_avail[x] >= per_setting for x in selected)
+            and all(settings_avail[x] >= MIN_EACH_SETTING for x in selected)
         )
-
         for _ in range(ATTEMPTS_PER_LEVEL):
-            picks = _attempt(
-                cands,
-                by_country,
-                weighted,
-                rng,
-                n,
-                use_country_weighting,
-                enforce_city,
-                enforce_cap,
-            )
+            picks = _attempt(cands, by_country, weighted, rng, n, use_country_weighting, caps)
             if picks is None:
                 continue
             if need_quint and len({quint[p.id] for p in picks}) < MIN_QUINTILES:
                 continue
             if need_mix:
                 s = Counter(p.setting for p in picks)
-                if any(s[x] < per_setting for x in selected):
+                if any(s[x] < MIN_EACH_SETTING for x in selected):
                     continue
             rng.shuffle(picks)
             return picks
 
     raise PoolTooSmall("could not build a game from the pool")  # pragma: no cover
+
+
+@dataclass(frozen=True)
+class _Caps:
+    city: bool
+    country: bool
+    source: bool
 
 
 def _attempt(
@@ -237,21 +241,23 @@ def _attempt(
     rng: random.Random,
     n: int,
     use_country_weighting: bool,
-    enforce_city: bool,
-    enforce_cap: bool,
+    caps: _Caps,
 ) -> list[Candidate] | None:
     """One randomized attempt at filling `n` slots under the hard per-slot rules."""
     picks: list[Candidate] = []
     used_ids: set[str] = set()
     used_cities: set[tuple[str, str]] = set()
     per_country: Counter[str] = Counter()
+    per_source: Counter[int] = Counter()
 
     def ok(c: Candidate) -> bool:
         if c.id in used_ids:
             return False
-        if enforce_city and (c.country_code, c.city) in used_cities:
+        if caps.city and (c.country_code, c.city) in used_cities:
             return False
-        return not (enforce_cap and per_country[c.country_code] >= MAX_PER_COUNTRY)
+        if caps.source and per_source[c.source_id] >= MAX_PER_SOURCE:
+            return False
+        return not (caps.country and per_country[c.country_code] >= MAX_PER_COUNTRY)
 
     for _slot in range(n):
         if use_country_weighting:
@@ -266,10 +272,10 @@ def _attempt(
             options = [c for c in cands if ok(c)]
         if not options:
             return None
-        # Prefer homes that have a photo; imageless ones are filler when nothing else fits.
-        c = rng.choice([o for o in options if o.has_image] or options)
+        c = rng.choice(options)
         picks.append(c)
         used_ids.add(c.id)
         used_cities.add((c.country_code, c.city))
         per_country[c.country_code] += 1
+        per_source[c.source_id] += 1
     return picks

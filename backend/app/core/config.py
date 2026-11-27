@@ -23,52 +23,43 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: str = "sqlite:///./data/ballpark.db"
-    google_maps_api_key: str = ""
-    google_url_signing_secret: str = ""
-    google_daily_quota: int = 300
-    daily_reserved: int = 100
     daily_salt: str = "change-me"
     launch_date: date = date(2027, 1, 1)
     public_base_url: str = "https://ballpark.example.com"
     contact_email: str = "you@example.com"
     scraper_user_agent: str = "BallparkBot/1.0"
-    admin_token: str = "change-me"
     cors_origins: str = "http://localhost:5173"
-    max_price_age_years: int = 5
+    max_price_age_years: int = 2  # asking prices go stale fast
     min_pool_per_option: int = 50
-    nominatim_url: str = "https://nominatim.openstreetmap.org"
-    ghsl_smod_path: str = "./data/ghsl/GHS_SMOD.tif"
-    fx_manual_csv: str = "./data/fx_manual.csv"
 
-    # Ingestion (Phase 2)
-    fx_api_url: str = "https://api.frankfurter.dev/v1"
-    postcodes_io_url: str = "https://api.postcodes.io"
-    ingest_cache_dir: str = "./data/cache"
+    # Listing photos (Section 5.1 / 7)
+    max_photos_stored: int = 10
+    max_photos_per_round: int = 6
+    min_ok_photos: int = 2
+
+    # Refresh (Section 8.7)
+    refresh_days: int = 14
+    refresh_daily_limit: int = 500
+
+    ghsl_smod_path: str = "./data/ghsl/GHS_SMOD.tif"
     ghsl_smod_url: str = (
         "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_SMOD_GLOBE_R2023A/"
         "GHS_SMOD_E2025_GLOBE_R2023A_54009_1000/V2-0/GHS_SMOD_E2025_GLOBE_R2023A_54009_1000_V2_0.zip"
     )
-
-    # Images (Section 7). Mapillary client token: https://www.mapillary.com/dashboard/developers
-    mapillary_token: str = ""
-    # Play homes with no photo (an illustrated card is shown instead). Owner decision: off, so
-    # only homes with a photo appear. If NO photo source is configured at all, imageless homes
-    # are still allowed so the game stays playable (e.g. local development on demo data).
-    allow_imageless_rounds: bool = False
-    # Check unchecked homes for Mapillary photos in a background thread while the API runs.
-    background_photo_check: bool = True
-    background_photo_check_per_second: float = 5.0
+    fx_manual_csv: str = "./data/fx_manual.csv"
+    fx_api_url: str = "https://api.frankfurter.dev/v1"
+    ingest_cache_dir: str = "./data/cache"
 
     # Mini map tiles (Section 4.2 / 11). Swap for another provider if traffic grows.
-    tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    osm_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     tile_attribution: str = (
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     )
 
-    # Rate limits (Section 6.1). Set to 0 to disable.
+    # Rate limits per IP per hour (Section 6.1). 0 disables.
     rate_limit_games_per_hour: int = 30
     rate_limit_guesses_per_hour: int = 120
-    rate_limit_writes_per_hour: int = 30  # leaderboard submissions, removals, telemetry
+    rate_limit_writes_per_hour: int = 30  # leaderboard submissions, reports, removals, telemetry
 
     @property
     def cors_origin_list(self) -> list[str]:

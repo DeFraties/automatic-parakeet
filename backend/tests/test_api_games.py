@@ -6,7 +6,15 @@ import pytest
 from app.core import security
 from app.models import Property
 
-PRICE_KEYS = {"price_local", "price_usd", "listing_url", "fx_rate_to_usd", "guess_usd", "fx_hint"}
+PRICE_KEYS = {
+    "price_local",
+    "price_usd",
+    "listing_url",
+    "fx_rate_to_usd",
+    "guess_usd",
+    "fx_hint",
+    "source_ref",
+}
 
 
 def _keys(obj):
@@ -149,9 +157,7 @@ def test_invalid_guess_amounts(client, seeded, amount):
     assert res.status_code == 422
 
 
-@pytest.mark.parametrize(
-    "settings", [["urban"], ["suburban"], ["rural"], ["urban", "suburban"], ["suburban", "rural"]]
-)
+@pytest.mark.parametrize("settings", [["urban"], ["rural"], ["urban", "rural"]])
 def test_setting_toggles_only_contain_selected_settings(client, seeded, settings):
     for _ in range(5):
         g = _new(client, settings=settings)
@@ -226,16 +232,14 @@ def test_meta(client, seeded):
     m = client.get("/api/meta").json()
     assert len(m["countries"]) == 16
     assert m["world"]["selectable"] is True
-    assert m["world"]["eligible"] == {"urban": 19, "suburban": 21, "rural": 11}
+    assert m["world"]["eligible"] == {"urban": 40, "rural": 11}
     # 50 required per option -> seed counts are too small for any single option.
     assert not any(c["selectable"] for c in m["countries"])
     jp = next(c for c in m["countries"] if c["code"] == "JP")
-    assert jp["eligible"] == {"urban": 2, "suburban": 1, "rural": 1}
-    assert m["settings"] == {"all": ["urban", "suburban", "rural"], "default": ["urban", "rural"]}
+    assert jp["eligible"] == {"urban": 3, "rural": 1}
+    assert m["settings"] == {"all": ["urban", "rural"], "default": ["urban", "rural"]}
     assert m["tile_url"].startswith("https://tile.openstreetmap.org/")
-    assert m["streetview_enabled"] is False
-    assert m["photo_sources"] == {"mapillary": False, "google": False}
-    assert m["quota"] == {"games_available": True, "daily_available": True}
+    assert not any(k in m for k in ("quota", "streetview_enabled", "photo_sources"))
     assert {r["key"] for r in m["regions"]} == {
         "north_america",
         "south_america",
@@ -245,3 +249,64 @@ def test_meta(client, seeded):
         "east_asia",
     }
     assert [s["key"] for s in m["sources"]] == ["demo"]
+
+
+def test_round_photos_ok_only_ordered_capped_with_credit(client, seeded, monkeypatch):
+    from app.core.config import get_settings
+    from app.models import PropertyImage
+
+    for p in seeded.query(Property).all():
+        p.images.clear()
+        seeded.flush()
+        p.images = [PropertyImage(position=i, url=f"https://img.test/{p.source_ref}/{i}.jpg",
+                                  status="broken" if i == 1 else "ok",
+                                  kind="floorplan" if i == 0 else "photo")
+                    for i in range(9)]  # fmt: skip
+    seeded.commit()
+    monkeypatch.setattr(get_settings(), "max_photos_per_round", 4)
+    r = _new(client)["round"]
+    ph = r["photos"]
+    assert len(ph) == 4  # capped
+    assert [x["position"] for x in ph] == [2, 3, 4, 5]  # ok only, listing order, floor plan last
+    assert all(x["url"].startswith("https://img.test/") for x in ph)
+    assert ph[0]["alt"].startswith("Listing photo 1 of 4, property in ")
+    assert r["photo_credit"] == "Photos: DEMO data (fictional)"
+    assert "source_ref" not in json.dumps(r)
+
+
+def test_floorplan_comes_last(client, seeded, monkeypatch):
+    from app.core.config import get_settings
+    from app.models import PropertyImage
+
+    for p in seeded.query(Property).all():
+        p.images.clear()
+        seeded.flush()
+        p.images = [
+            PropertyImage(
+                position=i,
+                url=f"https://img.test/{i}.jpg",
+                status="ok",
+                kind="floorplan" if i == 0 else "photo",
+            )
+            for i in range(3)
+        ]
+    seeded.commit()
+    monkeypatch.setattr(get_settings(), "max_photos_per_round", 6)
+    ph = _new(client)["round"]["photos"]
+    assert [x["position"] for x in ph] == [1, 2, 0]
+    assert ph[-1]["kind"] == "floorplan" and ph[-1]["alt"].startswith("Floor plan 3 of 3")
+
+
+def test_map_only_when_listing_has_coordinates(client, seeded):
+    for p in seeded.query(Property).all():
+        p.lat = p.lng = None
+    seeded.commit()
+    assert _new(client)["round"]["map"] is None
+
+
+def test_summary_has_lead_photo(client, seeded):
+    g = _new(client)
+    for n in range(1, 6):
+        body = _guess(client, g["game_id"], n, 300_000).json()
+    rows = body["summary"]["rounds"]
+    assert all(r["lead_photo"].startswith("/demo-photos/") for r in rows)
